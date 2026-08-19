@@ -29,6 +29,10 @@ export async function loadConfig(path) {
   if (!config.desktop || typeof config.desktop !== "object") throw new Error("missing_desktop");
   requiredString(config.desktop, "baseUrl");
   requiredString(config.desktop, "authToken");
+  if (config.desktop.authToken === "$TASKNOTES_AUTH_TOKEN") {
+    if (!process.env.TASKNOTES_AUTH_TOKEN) throw new Error("missing_tasknotes_auth_token");
+    config.desktop.authToken = process.env.TASKNOTES_AUTH_TOKEN;
+  }
   if (!config.headless || typeof config.headless !== "object") throw new Error("missing_headless");
   requiredString(config.headless, "mtnPath");
   return { ...config, stateDir: defaultStateDir() };
