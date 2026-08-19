@@ -3,6 +3,7 @@ import { loadConfig } from "./config.mjs";
 import { parseHookPayload } from "./hooks.mjs";
 import { openState } from "./state.mjs";
 import { sessionEnd } from "./domain.mjs";
+import { startWork, stopWork } from "./domain.mjs";
 import { createTaskNotesApiBackend } from "./backends/tasknotes-api.mjs";
 
 const [command] = process.argv.slice(2);
@@ -28,6 +29,18 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
         await sessionEnd({ state, api, sessionKey: hook.sessionKey });
       }
       output({ ok: true, hookSpecificOutput: { hookEventName: hook.event, additionalContext: `TaskNotes adapter ready; responsavel padrao: ${config.defaultResponsavel}.` } });
+    } else if (command === "start" || command === "stop") {
+      const taskPath = process.argv[3];
+      const agent = process.argv[process.argv.indexOf("--agent") + 1];
+      const sessionId = process.argv[process.argv.indexOf("--session") + 1];
+      if (!agent || !sessionId || (command === "start" && !taskPath)) throw new Error("missing_session_or_task");
+      const state = await openState(config.stateDir);
+      const api = createTaskNotesApiBackend(config.desktop);
+      const sessionKey = `${agent}:${sessionId}`;
+      const result = command === "start"
+        ? await startWork({ state, api, sessionKey, vault: config.vault, taskPath })
+        : await stopWork({ state, api, sessionKey, status: "pausa" });
+      output({ ok: true, result });
     } else {
       output({ ok: true, command, responsavel: config.defaultResponsavel });
     }
