@@ -76,6 +76,18 @@ export async function releaseSession(state, sessionKey) {
   });
 }
 
+export async function getBinding(state, sessionKey) {
+  const data = await readState(state.path);
+  return data.bindings[sessionKey] ?? null;
+}
+
+export async function confirmSession(state, sessionKey, timerIdentity) {
+  return withLock(state, (data) => {
+    if (!data.bindings[sessionKey]) throw new Error("binding_not_found");
+    data.bindings[sessionKey] = { ...data.bindings[sessionKey], timerIdentity, confirmedAt: new Date().toISOString() };
+  });
+}
+
 export async function recoverLease(state, taskKey, expectedSessionKey) {
   return withLock(state, (data) => {
     if (data.leases[taskKey] !== expectedSessionKey) throw new Error("lease_owner_mismatch");
