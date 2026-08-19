@@ -1,0 +1,8 @@
+{
+  "name": "@madamelabs/tasknotes-agent-adapter",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": { "test": "node --test test/*.test.mjs" },
+  "bin": { "tasknotes-agent": "src/cli.mjs" }
+}
