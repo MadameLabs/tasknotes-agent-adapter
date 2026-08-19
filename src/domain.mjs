@@ -6,10 +6,10 @@ export async function startWork({ state, api, sessionKey, vault, taskPath }) {
   if (existing) throw new Error("session_already_bound");
   const task = await api.getTask(taskPath);
   if (!task || ["concluido", "cancelado"].includes(task.status)) throw new Error("task_not_open");
-  if ((await api.getActiveTimers()).some((item) => (item.task?.id ?? item.task?.path) === taskPath)) throw new Error("unowned_active_timer");
   const binding = { sessionKey, vault, taskPath, backend: "desktop", timerIdentity: null, createdAt: new Date().toISOString(), confirmedAt: null };
   await bindSession(state, binding);
   try {
+    if ((await api.getActiveTimers()).some((item) => (item.task?.id ?? item.task?.path) === taskPath)) throw new Error("unowned_active_timer");
     await api.setStatus(taskPath, "em-andamento");
     const timerIdentity = await api.startTimer(taskPath);
     if (!await api.verifyTimer(taskPath, timerIdentity)) throw new Error("timer_not_verified");
