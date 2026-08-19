@@ -37,3 +37,12 @@ test("never adopts an unowned active timer or changes status on session end", as
     assert.deepEqual(calls, []);
   });
 });
+
+test("rejects another session's lease without mutating the backend", async () => {
+  await fixture(async ({ state, api, calls }) => {
+    await startWork({ state, api, sessionKey: "codex:a", vault: "ENGENHARIA", taskPath: "a" });
+    calls.length = 0;
+    await assert.rejects(startWork({ state, api, sessionKey: "claude:b", vault: "ENGENHARIA", taskPath: "a" }), /task_leased/);
+    assert.deepEqual(calls, []);
+  });
+});
