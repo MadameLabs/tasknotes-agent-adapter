@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 async function importsFrom(file, seen = new Set()) {
@@ -15,6 +16,6 @@ async function importsFrom(file, seen = new Set()) {
 }
 
 test("the adapter entrypoint has no Google Tasks dependency", async () => {
-  const files = await importsFrom(resolve("agent-adapter/src/cli.mjs"));
+  const files = await importsFrom(fileURLToPath(new URL("../src/cli.mjs", import.meta.url)));
   assert.ok(files.size > 0);
 });
