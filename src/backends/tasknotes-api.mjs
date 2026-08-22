@@ -31,7 +31,7 @@ export function createTaskNotesApiBackend({ baseUrl, authToken }) {
       const path = created.id ?? created.path;
       if (input.responsavel || input.marcas?.length) {
         const patch = {};
-        if (input.responsavel) patch.Responsavel = [input.responsavel];
+        if (input.responsavel) patch.Responsavel = [wikilink(input.responsavel)];
         if (input.marcas?.length) patch.Marca = input.marcas.map(wikilink);
         await request(taskUrl(path), { method: "PUT", body: JSON.stringify(patch) });
       }
