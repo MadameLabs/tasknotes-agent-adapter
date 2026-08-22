@@ -22,7 +22,7 @@ async function fixture(callback) {
     const reply = (data) => { response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ success: true, data })); };
     if (request.url === "/api/tasks?limit=200&offset=0") return reply({ tasks: [{ id: "06-tarefas/CRM.md", title: "CRM", status: "to-do" }], pagination: { hasMore: false } });
     if (request.url === "/api/tasks" && request.method === "POST") return reply({ id: "06-tarefas/Nova.md", title: "Nova" });
-    if (request.url === "/api/tasks/06-tarefas%2FNova.md" && request.method === "PUT") return reply({});
+    if (request.url.startsWith("/api/tasks/") && request.method === "PUT") return reply({});
     response.statusCode = 404;
     response.end(JSON.stringify({ success: false }));
   });
@@ -105,5 +105,31 @@ test("open and create execute against the TaskNotes API", async () => {
     assert.equal(created.task.path, "06-tarefas/Nova.md");
     assert.deepEqual(calls.find((call) => call.method === "POST").body.projects, ["[[CRM]]"]);
     assert.deepEqual(calls.find((call) => call.method === "PUT").body, { Responsavel: ["arthur"], Marca: ["[[Madame_Labs]]"] });
+  });
+});
+
+test("link-project attaches an existing task to one or more projects", async () => {
+  await fixture(async ({ config, calls }) => {
+    const linked = JSON.parse((await run(process.execPath, [
+      fileURLToPath(cli), "link-project", "01-planejamento/plano.md",
+      "--projeto", "integracao-planejamento-agentes", "--projeto", "outro-projeto", "--config", config,
+    ])).stdout);
+    assert.equal(linked.ok, true);
+    const put = calls.find((call) => call.method === "PUT" && call.url === "/api/tasks/01-planejamento%2Fplano.md");
+    assert.deepEqual(put.body, { projects: ["[[integracao-planejamento-agentes]]", "[[outro-projeto]]"] });
+  });
+});
+
+test("link-project refuses safely when the path or the project is missing", async () => {
+  await fixture(async ({ config, calls }) => {
+    const noProject = spawnSync(process.execPath, [fileURLToPath(cli), "link-project", "01-planejamento/plano.md", "--config", config], { encoding: "utf8" });
+    assert.equal(noProject.status, 2);
+    assert.equal(JSON.parse(noProject.stdout).ok, false);
+
+    const noPath = spawnSync(process.execPath, [fileURLToPath(cli), "link-project", "--projeto", "algum", "--config", config], { encoding: "utf8" });
+    assert.equal(noPath.status, 2);
+    assert.equal(JSON.parse(noPath.stdout).ok, false);
+
+    assert.equal(calls.some((call) => call.method === "PUT"), false);
   });
 });

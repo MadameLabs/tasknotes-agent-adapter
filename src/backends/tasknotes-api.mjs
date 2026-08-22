@@ -38,6 +38,7 @@ export function createTaskNotesApiBackend({ baseUrl, authToken }) {
       return { ...created, path };
     },
     getTask: (path) => request(taskUrl(path)),
+    setProjects: (path, projects) => request(taskUrl(path), { method: "PUT", body: JSON.stringify({ projects: projects.map(wikilink) }) }),
     getActiveTimers,
     setStatus: (path, status) => request(taskUrl(path), { method: "PUT", body: JSON.stringify({ status }) }),
     async startTimer(path) {

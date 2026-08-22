@@ -37,7 +37,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
     process.exitCode = 1;
   }
   if (config) try {
-    if (!["hook-start", "hook-end", "open", "create", "start", "stop", "diagnose", "recover", "reset"].includes(command)) {
+    if (!["hook-start", "hook-end", "open", "create", "link-project", "start", "stop", "diagnose", "recover", "reset"].includes(command)) {
       output({ ok: false, error: "unknown_command", message: "unsupported command" });
       process.exitCode = 2;
     } else if (command === "hook-start" || command === "hook-end") {
@@ -67,6 +67,13 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
         projeto: option("--projeto"),
       });
       output({ ok: true, task });
+    } else if (command === "link-project") {
+      const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
+      const projetos = options("--projeto").filter((value) => value && !value.startsWith("--"));
+      if (!taskPath || !projetos.length) throw new Error("missing_task_or_project");
+      const api = createTaskNotesApiBackend(config.desktop);
+      await api.setProjects(taskPath, projetos);
+      output({ ok: true, result: { taskPath, projects: projetos } });
     } else if (command === "start" || command === "stop") {
       const taskPath = process.argv[3];
       const agent = option("--agent");

@@ -43,3 +43,12 @@ test("verifies the timer identity from active sessions", async () => {
     await api.stopTimer("a");
   });
 });
+
+test("sets projects through the documented task update endpoint", async () => {
+  await withServer(async ({ baseUrl, calls }) => {
+    const api = createTaskNotesApiBackend({ baseUrl, authToken: "token" });
+    await api.setProjects("a", ["Projeto", "[[Outro]]"]);
+    const put = calls.find((call) => call.method === "PUT" && call.url === "/api/tasks/a");
+    assert.deepEqual(put.body, { projects: ["[[Projeto]]", "[[Outro]]"] });
+  });
+});
