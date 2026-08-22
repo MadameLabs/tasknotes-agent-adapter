@@ -15,6 +15,7 @@ const run = promisify(execFile);
 async function fixture(callback) {
   const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-cli-"));
   const calls = [];
+  const timers = [];
   const server = createServer(async (request, response) => {
     let raw = "";
     for await (const chunk of request) raw += chunk;
@@ -22,6 +23,13 @@ async function fixture(callback) {
     const reply = (data) => { response.setHeader("content-type", "application/json"); response.end(JSON.stringify({ success: true, data })); };
     if (request.url === "/api/tasks?limit=200&offset=0") return reply({ tasks: [{ id: "06-tarefas/CRM.md", title: "CRM", status: "to-do" }], pagination: { hasMore: false } });
     if (request.url === "/api/tasks" && request.method === "POST") return reply({ id: "06-tarefas/Nova.md", title: "Nova" });
+    if (request.url === "/api/time/active") return reply({ activeSessions: timers });
+    if (request.url.endsWith("/time/start") && request.method === "POST") {
+      timers.push({ task: { id: decodeURIComponent(request.url.slice("/api/tasks/".length, -"/time/start".length)) }, session: { startTime: "2026-08-21T00:00:00.000Z" } });
+      return reply({});
+    }
+    if (request.url.endsWith("/time/stop") && request.method === "POST") { timers.length = 0; return reply({}); }
+    if (request.url.startsWith("/api/tasks/") && request.method === "GET") return reply({ id: decodeURIComponent(request.url.slice("/api/tasks/".length)), status: "to-do" });
     if (request.url.startsWith("/api/tasks/") && request.method === "PUT") return reply({});
     response.statusCode = 404;
     response.end(JSON.stringify({ success: false }));
@@ -35,6 +43,7 @@ async function fixture(callback) {
     defaultResponsavel: "arthur",
     desktop: { baseUrl: `http://127.0.0.1:${server.address().port}`, authToken: "token" },
     headless: { mtnPath: "mtn" },
+    stateDir: join(dir, "state"),
   }));
   try { await callback({ config, dir, calls }); }
   finally {
@@ -131,5 +140,30 @@ test("link-project refuses safely when the path or the project is missing", asyn
     assert.equal(JSON.parse(noPath.stdout).ok, false);
 
     assert.equal(calls.some((call) => call.method === "PUT"), false);
+  });
+});
+
+test("stop concludes the task only when an explicit status is given", async () => {
+  await fixture(async ({ config, calls }) => {
+    const args = ["--agent", "claude", "--session", "s1", "--config", config];
+    await run(process.execPath, [fileURLToPath(cli), "start", "01-planejamento/plano.md", ...args]);
+    const stopped = JSON.parse((await run(process.execPath, [
+      fileURLToPath(cli), "stop", "--status", "concluido", ...args,
+    ])).stdout);
+    assert.equal(stopped.result.stopped, true);
+
+    const statuses = calls.filter((call) => call.method === "PUT" && call.body?.status).map((call) => call.body.status);
+    assert.deepEqual(statuses, ["em-andamento", "concluido"]);
+  });
+});
+
+test("stop without an explicit status keeps pausing instead of concluding", async () => {
+  await fixture(async ({ config, calls }) => {
+    const args = ["--agent", "claude", "--session", "s2", "--config", config];
+    await run(process.execPath, [fileURLToPath(cli), "start", "01-planejamento/plano.md", ...args]);
+    await run(process.execPath, [fileURLToPath(cli), "stop", ...args]);
+
+    const statuses = calls.filter((call) => call.method === "PUT" && call.body?.status).map((call) => call.body.status);
+    assert.deepEqual(statuses, ["em-andamento", "pausa"]);
   });
 });

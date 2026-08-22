@@ -84,7 +84,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       const sessionKey = `${agent}:${sessionId}`;
       const result = command === "start"
         ? await startWork({ state, api, sessionKey, vault: config.vault, taskPath })
-        : await stopWork({ state, api, sessionKey, status: "pausa" });
+        : await stopWork({ state, api, sessionKey, status: option("--status", "pausa") });
       output({ ok: true, result });
     } else if (command === "diagnose") {
       output({ ok: true, result: await diagnoseState(await openState(config.stateDir)) });
