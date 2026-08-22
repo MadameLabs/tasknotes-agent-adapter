@@ -16,13 +16,14 @@ const option = (name, fallback = undefined) => {
 };
 const options = (name) => process.argv.flatMap((value, index) => value === name ? [process.argv[index + 1]] : []);
 const cli = fileURLToPath(import.meta.url);
+const STATUSES = ["to-do", "em-andamento", "aprovacao", "pausa", "concluido", "cancelado"];
 
 function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding }) {
   const base = `node ${cli}`;
   if (binding) {
-    return `Gate TaskNotes satisfeito: sessão vinculada a ${binding.taskPath}. Use somente o adaptador Node deste hub. Para parar: ${base} stop --agent ${agent} --session ${sessionId} --config ${configPath}. Não marque como concluída sem confirmação explícita do usuário.`;
+    return `Gate TaskNotes satisfeito: sessão vinculada a ${binding.taskPath}. Use somente o adaptador Node deste hub. Ao encerrar: ${base} stop --agent ${agent} --session ${sessionId} --status STATUS --config ${configPath}. STATUS é obrigatório e descreve o que aconteceu de fato: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido (terminou e é verificável sozinho, ou o usuário já confirmou), cancelado (abandonado), pausa (SÓ para stand-by real, nunca como desfecho de trabalho terminado).`;
   }
-  return `Gate TaskNotes obrigatório no madamelabs-code. Antes de trabalhar, execute ${base} open --config ${configPath} e pergunte em qual tarefa atuar; o usuário pode dispensar tarefa e cronômetro explicitamente. Para criar: ${base} create "TÍTULO" --responsavel ${defaultResponsavel} --marca MARCA [--projeto PROJETO] --config ${configPath}. Para iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --config ${configPath}. Use somente este adaptador Node. Não conclua tarefa sem confirmação explícita do usuário.`;
+  return `Gate TaskNotes obrigatório no madamelabs-code. Antes de trabalhar, execute ${base} open --config ${configPath} e pergunte em qual tarefa atuar; o usuário pode dispensar tarefa e cronômetro explicitamente. Para criar: ${base} create "TÍTULO" --responsavel ${defaultResponsavel} --marca MARCA [--projeto PROJETO] --config ${configPath}. Para iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --config ${configPath}. Use somente este adaptador Node. Ao encerrar, ${base} stop exige --status: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido, cancelado ou pausa (só stand-by real).`;
 }
 
 if (configIndex === -1 || !process.argv[configIndex + 1]) {
@@ -37,7 +38,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
     process.exitCode = 1;
   }
   if (config) try {
-    if (!["hook-start", "hook-end", "open", "create", "link-project", "start", "stop", "diagnose", "recover", "reset"].includes(command)) {
+    if (!["hook-start", "hook-end", "open", "create", "link-project", "set-status", "start", "stop", "diagnose", "recover", "reset"].includes(command)) {
       output({ ok: false, error: "unknown_command", message: "unsupported command" });
       process.exitCode = 2;
     } else if (command === "hook-start" || command === "hook-end") {
@@ -76,17 +77,29 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       const api = createTaskNotesApiBackend(config.desktop);
       await api.setProjects(taskPath, projetos);
       output({ ok: true, result: { taskPath, projects: projetos } });
+    } else if (command === "set-status") {
+      // Corrige o status de uma tarefa sem vincular sessao nem tocar no cronometro.
+      const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
+      const status = option("--status");
+      if (!taskPath) throw new Error("missing_task");
+      if (!STATUSES.includes(status)) throw new Error("missing_or_invalid_status");
+      const api = createTaskNotesApiBackend(config.desktop);
+      await api.setStatus(taskPath, status);
+      output({ ok: true, result: { taskPath, status } });
     } else if (command === "start" || command === "stop") {
       const taskPath = process.argv[3];
       const agent = option("--agent");
       const sessionId = option("--session");
       if (!agent || !sessionId || (command === "start" && !taskPath)) throw new Error("missing_session_or_task");
+      const status = option("--status");
+      // Sem default: pausa como desfecho automatico mentia sobre tarefas terminadas.
+      if (command === "stop" && !STATUSES.includes(status)) throw new Error("missing_or_invalid_status");
       const state = await openState(config.stateDir);
       const api = createTaskNotesApiBackend(config.desktop);
       const sessionKey = `${agent}:${sessionId}`;
       const result = command === "start"
         ? await startWork({ state, api, sessionKey, vault: config.vault, taskPath })
-        : await stopWork({ state, api, sessionKey, status: option("--status", "pausa") });
+        : await stopWork({ state, api, sessionKey, status });
       output({ ok: true, result });
     } else if (command === "diagnose") {
       output({ ok: true, result: await diagnoseState(await openState(config.stateDir)) });
