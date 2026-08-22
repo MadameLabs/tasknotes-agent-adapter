@@ -6,7 +6,7 @@ import { join } from "node:path";
 // para que Responsavel grave um wikilink que resolve de verdade.
 const RESPONSAVEIS = new Map([
   ["arthur", "Arthur_Cardoso"],
-  ["mayara", "Mayara"],
+  ["mayara", "Madame_Carmen"],
   ["labs", "Madame_Labs"],
 ]);
 
