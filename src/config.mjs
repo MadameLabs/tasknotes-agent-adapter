@@ -2,7 +2,20 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const RESPONSAVEIS = new Set(["arthur", "mayara", "labs"]);
+// Slug aceito na linha de comando -> nome da nota-ancora em ENGENHARIA/00-conhecimento/,
+// para que Responsavel grave um wikilink que resolve de verdade.
+const RESPONSAVEIS = new Map([
+  ["arthur", "Arthur_Cardoso"],
+  ["mayara", "Mayara"],
+  ["labs", "Madame_Labs"],
+]);
+
+export function resolveResponsavel(value) {
+  if (typeof value !== "string") return null;
+  const raw = value.trim().replace(/^\[\[|\]\]$/g, "");
+  return RESPONSAVEIS.get(raw.toLowerCase())
+    ?? ([...RESPONSAVEIS.values()].includes(raw) ? raw : null);
+}
 
 function requiredString(config, key) {
   if (typeof config[key] !== "string" || !config[key].trim()) {
@@ -23,9 +36,9 @@ export async function loadConfig(path) {
   requiredString(config, "vault");
   requiredString(config, "vaultPath");
   requiredString(config, "defaultResponsavel");
-  if (!RESPONSAVEIS.has(config.defaultResponsavel)) {
-    throw new Error("invalid_defaultResponsavel");
-  }
+  const defaultResponsavel = resolveResponsavel(config.defaultResponsavel);
+  if (!defaultResponsavel) throw new Error("invalid_defaultResponsavel");
+  config.defaultResponsavel = defaultResponsavel;
   if (!config.desktop || typeof config.desktop !== "object") throw new Error("missing_desktop");
   requiredString(config.desktop, "baseUrl");
   requiredString(config.desktop, "authToken");

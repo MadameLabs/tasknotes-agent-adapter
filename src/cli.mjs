@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { loadConfig } from "./config.mjs";
+import { loadConfig, resolveResponsavel } from "./config.mjs";
 import { parseHookPayload } from "./hooks.mjs";
 import { diagnoseState, getBinding, openState } from "./state.mjs";
 import { sessionEnd } from "./domain.mjs";
@@ -59,10 +59,12 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
     } else if (command === "create") {
       const title = process.argv[3];
       if (!title) throw new Error("missing_title");
+      const responsavel = resolveResponsavel(option("--responsavel", config.defaultResponsavel));
+      if (!responsavel) throw new Error("invalid_responsavel");
       const api = createTaskNotesApiBackend(config.desktop);
       const task = await api.createTask({
         title,
-        responsavel: option("--responsavel", config.defaultResponsavel),
+        responsavel,
         marcas: options("--marca"),
         projeto: option("--projeto"),
       });

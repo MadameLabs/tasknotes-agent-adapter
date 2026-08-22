@@ -113,7 +113,7 @@ test("open and create execute against the TaskNotes API", async () => {
     ])).stdout);
     assert.equal(created.task.path, "06-tarefas/Nova.md");
     assert.deepEqual(calls.find((call) => call.method === "POST").body.projects, ["[[CRM]]"]);
-    assert.deepEqual(calls.find((call) => call.method === "PUT").body, { Responsavel: ["arthur"], Marca: ["[[Madame_Labs]]"] });
+    assert.deepEqual(calls.find((call) => call.method === "PUT").body, { Responsavel: ["[[Arthur_Cardoso]]"], Marca: ["[[Madame_Labs]]"] });
   });
 });
 

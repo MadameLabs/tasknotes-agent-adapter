@@ -29,9 +29,9 @@ test("paginates open tasks and creates fields through the documented two-step wr
   await withServer(async ({ baseUrl, calls }) => {
     const api = createTaskNotesApiBackend({ baseUrl, authToken: "token" });
     assert.deepEqual((await api.listOpen()).map((task) => task.id), ["a"]);
-    await api.createTask({ title: "Nova", responsavel: "arthur", marcas: ["Madame_Labs"], projeto: "Projeto" });
+    await api.createTask({ title: "Nova", responsavel: "Arthur_Cardoso", marcas: ["Madame_Labs"], projeto: "Projeto" });
     assert.deepEqual(calls.find((call) => call.method === "POST").body.projects, ["[[Projeto]]"]);
-    assert.deepEqual(calls.find((call) => call.method === "PUT").body, { Responsavel: ["arthur"], Marca: ["[[Madame_Labs]]"] });
+    assert.deepEqual(calls.find((call) => call.method === "PUT").body, { Responsavel: ["[[Arthur_Cardoso]]"], Marca: ["[[Madame_Labs]]"] });
   });
 });
 

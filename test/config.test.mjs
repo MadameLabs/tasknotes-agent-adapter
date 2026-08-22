@@ -30,7 +30,7 @@ test("loads a valid configuration and derives a state directory", async () => {
   await withConfig(validConfig, async (path) => {
     const config = await loadConfig(path);
     assert.equal(config.workspace, validConfig.workspace);
-    assert.equal(config.defaultResponsavel, "arthur");
+    assert.equal(config.defaultResponsavel, "Arthur_Cardoso");
     assert.ok(config.stateDir.replaceAll("\\", "/").endsWith("MadameLabs/TaskNotesAgent"));
   });
 });
@@ -38,6 +38,12 @@ test("loads a valid configuration and derives a state directory", async () => {
 test("rejects a configuration without vaultPath", async () => {
   const { vaultPath, ...invalid } = validConfig;
   await withConfig(invalid, (path) => assert.rejects(loadConfig(path), /missing_vaultPath/));
+});
+
+test("accepts the canonical note name as default responsavel", async () => {
+  await withConfig({ ...validConfig, defaultResponsavel: "Arthur_Cardoso" }, async (path) =>
+    assert.equal((await loadConfig(path)).defaultResponsavel, "Arthur_Cardoso"),
+  );
 });
 
 test("rejects an unsupported default responsavel", async () => {
