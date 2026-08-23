@@ -5,6 +5,7 @@ import { diagnoseState, getBinding, openState } from "./state.mjs";
 import { sessionEnd } from "./domain.mjs";
 import { startWork, stopWork } from "./domain.mjs";
 import { createTaskNotesApiBackend } from "./backends/tasknotes-api.mjs";
+import { createMtnBackend } from "./backends/mtn.mjs";
 import { fileURLToPath } from "node:url";
 
 const [command] = process.argv.slice(2);
@@ -16,7 +17,18 @@ const option = (name, fallback = undefined) => {
 };
 const options = (name) => process.argv.flatMap((value, index) => value === name ? [process.argv[index + 1]] : []);
 const cli = fileURLToPath(import.meta.url);
+const backend = option("--backend", "desktop");
 const STATUSES = ["to-do", "em-andamento", "aprovacao", "pausa", "concluido", "cancelado"];
+const BACKENDS = ["desktop", "headless"];
+
+// Desktop e o padrao porque so ele cria tarefa com Responsavel, Marca e Projeto.
+// Headless existe para sessao sem Obsidian aberto e nunca e escolhido sozinho.
+function backendFor(config, name) {
+  if (!BACKENDS.includes(name)) throw new Error("invalid_backend");
+  return name === "headless"
+    ? createMtnBackend({ mtnPath: config.headless.mtnPath, vaultPath: config.vaultPath, mtnArgs: config.headless.mtnArgs ?? [] })
+    : createTaskNotesApiBackend(config.desktop);
+}
 
 function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding }) {
   const base = `node ${cli}`;
@@ -48,13 +60,15 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       const hook = parseHookPayload(agent, event, input);
       const state = await openState(config.stateDir);
       if (command === "hook-end") {
-        const api = createTaskNotesApiBackend(config.desktop);
-        await sessionEnd({ state, api, sessionKey: hook.sessionKey });
+        // O backend vem do vinculo: parar por um caminho diferente do que
+        // iniciou nao consegue verificar a identidade do timer.
+        const bound = await getBinding(state, hook.sessionKey);
+        if (bound) await sessionEnd({ state, api: backendFor(config, bound.backend ?? backend), sessionKey: hook.sessionKey });
       }
       const binding = command === "hook-start" ? await getBinding(state, hook.sessionKey) : null;
       output({ ok: true, hookSpecificOutput: { hookEventName: hook.event, additionalContext: gateContext({ agent, configPath: process.argv[configIndex + 1], defaultResponsavel: config.defaultResponsavel, sessionId: hook.sessionId, binding }) } });
     } else if (command === "open") {
-      const api = createTaskNotesApiBackend(config.desktop);
+      const api = backendFor(config, backend);
       const tasks = (await api.listOpen()).map((task) => ({ ...task, path: task.path ?? task.id }));
       output({ ok: true, tasks });
     } else if (command === "create") {
@@ -62,7 +76,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       if (!title) throw new Error("missing_title");
       const responsavel = resolveResponsavel(option("--responsavel", config.defaultResponsavel));
       if (!responsavel) throw new Error("invalid_responsavel");
-      const api = createTaskNotesApiBackend(config.desktop);
+      const api = backendFor(config, backend);
       const task = await api.createTask({
         title,
         responsavel,
@@ -74,7 +88,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
       const projetos = options("--projeto").filter((value) => value && !value.startsWith("--"));
       if (!taskPath || !projetos.length) throw new Error("missing_task_or_project");
-      const api = createTaskNotesApiBackend(config.desktop);
+      const api = backendFor(config, backend);
       await api.setProjects(taskPath, projetos);
       output({ ok: true, result: { taskPath, projects: projetos } });
     } else if (command === "set-status") {
@@ -83,7 +97,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       const status = option("--status");
       if (!taskPath) throw new Error("missing_task");
       if (!STATUSES.includes(status)) throw new Error("missing_or_invalid_status");
-      const api = createTaskNotesApiBackend(config.desktop);
+      const api = backendFor(config, backend);
       await api.setStatus(taskPath, status);
       output({ ok: true, result: { taskPath, status } });
     } else if (command === "start" || command === "stop") {
@@ -95,10 +109,11 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       // Sem default: pausa como desfecho automatico mentia sobre tarefas terminadas.
       if (command === "stop" && !STATUSES.includes(status)) throw new Error("missing_or_invalid_status");
       const state = await openState(config.stateDir);
-      const api = createTaskNotesApiBackend(config.desktop);
       const sessionKey = `${agent}:${sessionId}`;
+      const bound = command === "stop" ? await getBinding(state, sessionKey) : null;
+      const api = backendFor(config, bound?.backend ?? backend);
       const result = command === "start"
-        ? await startWork({ state, api, sessionKey, vault: config.vault, taskPath })
+        ? await startWork({ state, api, sessionKey, vault: config.vault, taskPath, backend })
         : await stopWork({ state, api, sessionKey, status });
       output({ ok: true, result });
     } else if (command === "diagnose") {

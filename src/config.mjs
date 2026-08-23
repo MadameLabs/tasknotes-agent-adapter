@@ -48,5 +48,10 @@ export async function loadConfig(path) {
   }
   if (!config.headless || typeof config.headless !== "object") throw new Error("missing_headless");
   requiredString(config.headless, "mtnPath");
-  return { ...config, stateDir: defaultStateDir() };
+  // stateDir explicito e o que isola teste e vault temporario do estado real da
+  // maquina; sem ele a suite gravava leases de mentira no estado de producao.
+  const stateDir = typeof config.stateDir === "string" && config.stateDir.trim()
+    ? config.stateDir
+    : defaultStateDir();
+  return { ...config, stateDir };
 }

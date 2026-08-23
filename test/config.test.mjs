@@ -35,6 +35,12 @@ test("loads a valid configuration and derives a state directory", async () => {
   });
 });
 
+test("honours an explicit stateDir so tests never write to the real state", async () => {
+  await withConfig({ ...validConfig, stateDir: "C:/tmp/estado-de-teste" }, async (path) =>
+    assert.equal((await loadConfig(path)).stateDir, "C:/tmp/estado-de-teste"),
+  );
+});
+
 test("rejects a configuration without vaultPath", async () => {
   const { vaultPath, ...invalid } = validConfig;
   await withConfig(invalid, (path) => assert.rejects(loadConfig(path), /missing_vaultPath/));

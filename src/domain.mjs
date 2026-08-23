@@ -1,12 +1,12 @@
 import { bindSession, confirmSession, getBinding, releaseSession } from "./state.mjs";
 
-export async function startWork({ state, api, sessionKey, vault, taskPath }) {
+export async function startWork({ state, api, sessionKey, vault, taskPath, backend = "desktop" }) {
   const existing = await getBinding(state, sessionKey);
   if (existing?.taskPath === taskPath) return existing;
   if (existing) throw new Error("session_already_bound");
   const task = await api.getTask(taskPath);
   if (!task || ["concluido", "cancelado"].includes(task.status)) throw new Error("task_not_open");
-  const binding = { sessionKey, vault, taskPath, backend: "desktop", timerIdentity: null, createdAt: new Date().toISOString(), confirmedAt: null };
+  const binding = { sessionKey, vault, taskPath, backend, timerIdentity: null, createdAt: new Date().toISOString(), confirmedAt: null };
   await bindSession(state, binding);
   try {
     if ((await api.getActiveTimers()).some((item) => (item.task?.id ?? item.task?.path) === taskPath)) throw new Error("unowned_active_timer");

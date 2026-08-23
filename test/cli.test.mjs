@@ -157,13 +157,31 @@ test("stop concludes the task only when an explicit status is given", async () =
   });
 });
 
-test("stop without an explicit status keeps pausing instead of concluding", async () => {
+test("stop without an explicit status refuses instead of inventing a desfecho", async () => {
   await fixture(async ({ config, calls }) => {
     const args = ["--agent", "claude", "--session", "s2", "--config", config];
     await run(process.execPath, [fileURLToPath(cli), "start", "01-planejamento/plano.md", ...args]);
-    await run(process.execPath, [fileURLToPath(cli), "stop", ...args]);
+
+    // O default antigo era pausa, que mentia sobre tarefa terminada. Agora a
+    // recusa precisa preservar o timer, o vinculo e o status em-andamento.
+    const refused = spawnSync(process.execPath, [fileURLToPath(cli), "stop", ...args], { encoding: "utf8" });
+    assert.equal(refused.status, 2);
+    assert.equal(JSON.parse(refused.stdout).error, "missing_or_invalid_status");
 
     const statuses = calls.filter((call) => call.method === "PUT" && call.body?.status).map((call) => call.body.status);
-    assert.deepEqual(statuses, ["em-andamento", "pausa"]);
+    assert.deepEqual(statuses, ["em-andamento"]);
+    assert.equal(calls.some((call) => call.url.endsWith("/time/stop")), false);
+  });
+});
+
+test("stop refuses an unsupported status without touching the timer", async () => {
+  await fixture(async ({ config, calls }) => {
+    const args = ["--agent", "claude", "--session", "s3", "--config", config];
+    await run(process.execPath, [fileURLToPath(cli), "start", "01-planejamento/plano.md", ...args]);
+
+    const refused = spawnSync(process.execPath, [fileURLToPath(cli), "stop", "--status", "arquivado", ...args], { encoding: "utf8" });
+    assert.equal(refused.status, 2);
+    assert.equal(JSON.parse(refused.stdout).error, "missing_or_invalid_status");
+    assert.equal(calls.some((call) => call.url.endsWith("/time/stop")), false);
   });
 });
