@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { loadConfig, resolveResponsavel } from "./config.mjs";
 import { parseHookPayload } from "./hooks.mjs";
-import { diagnoseState, getBinding, openState } from "./state.mjs";
+import { diagnoseState, getBinding, openState, recoverLease } from "./state.mjs";
 import { sessionEnd } from "./domain.mjs";
 import { startWork, stopWork } from "./domain.mjs";
 import { createTaskNotesApiBackend } from "./backends/tasknotes-api.mjs";
@@ -50,7 +50,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
     process.exitCode = 1;
   }
   if (config) try {
-    if (!["hook-start", "hook-end", "open", "create", "link-project", "set-status", "start", "stop", "diagnose", "recover", "reset"].includes(command)) {
+    if (!["hook-start", "hook-end", "open", "create", "link-project", "set-status", "start", "stop", "diagnose", "recover"].includes(command)) {
       output({ ok: false, error: "unknown_command", message: "unsupported command" });
       process.exitCode = 2;
     } else if (command === "hook-start" || command === "hook-end") {
@@ -116,6 +116,17 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
         ? await startWork({ state, api, sessionKey, vault: config.vault, taskPath, backend })
         : await stopWork({ state, api, sessionKey, status });
       output({ ok: true, result });
+    } else if (command === "recover") {
+      // Recuperacao explicita: libera vinculo e lease de uma sessao morta sem
+      // tocar em backend nenhum. Exige o dono esperado, para nao virar caminho
+      // de tomar a tarefa de outra sessao viva.
+      const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
+      const agent = option("--agent");
+      const sessionId = option("--session");
+      if (!taskPath || !agent || !sessionId) throw new Error("missing_session_or_task");
+      const state = await openState(config.stateDir);
+      await recoverLease(state, `${config.vault}:${taskPath}`, `${agent}:${sessionId}`);
+      output({ ok: true, result: { taskPath, released: `${agent}:${sessionId}` } });
     } else if (command === "diagnose") {
       output({ ok: true, result: await diagnoseState(await openState(config.stateDir)) });
     } else {

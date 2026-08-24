@@ -185,3 +185,53 @@ test("stop refuses an unsupported status without touching the timer", async () =
     assert.equal(calls.some((call) => call.url.endsWith("/time/stop")), false);
   });
 });
+
+test("recover releases only the lease whose owner is named explicitly", async () => {
+  await fixture(async ({ config, calls }) => {
+    const args = ["--agent", "claude", "--session", "orfa", "--config", config];
+    await run(process.execPath, [fileURLToPath(cli), "start", "01-planejamento/plano.md", ...args]);
+
+    // Dono errado nao libera nada: e a protecao contra roubar lease de outra sessao.
+    const wrongOwner = spawnSync(process.execPath, [
+      fileURLToPath(cli), "recover", "01-planejamento/plano.md", "--agent", "claude", "--session", "outra", "--config", config,
+    ], { encoding: "utf8" });
+    assert.equal(wrongOwner.status, 2);
+    assert.equal(JSON.parse(wrongOwner.stdout).error, "lease_owner_mismatch");
+
+    const stillThere = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "diagnose", "--config", config])).stdout);
+    assert.equal(stillThere.result.leases.length, 1);
+
+    const recovered = JSON.parse((await run(process.execPath, [
+      fileURLToPath(cli), "recover", "01-planejamento/plano.md", ...args,
+    ])).stdout);
+    assert.equal(recovered.ok, true);
+
+    const empty = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "diagnose", "--config", config])).stdout);
+    assert.deepEqual(empty.result.leases, []);
+    assert.deepEqual(empty.result.bindings, []);
+
+    // Recuperacao mexe so no estado local: nenhum timer pode ser parado por ela.
+    assert.equal(calls.some((call) => call.url.endsWith("/time/stop")), false);
+  });
+});
+
+test("recover refuses without an explicit task and session", async () => {
+  await fixture(async ({ config }) => {
+    for (const args of [
+      ["recover", "--agent", "claude", "--session", "s", "--config", config],
+      ["recover", "01-planejamento/plano.md", "--agent", "claude", "--config", config],
+    ]) {
+      const refused = spawnSync(process.execPath, [fileURLToPath(cli), ...args], { encoding: "utf8" });
+      assert.equal(refused.status, 2);
+      assert.equal(JSON.parse(refused.stdout).error, "missing_session_or_task");
+    }
+  });
+});
+
+test("reset is not a real command and must not answer ok", async () => {
+  await fixture(async ({ config }) => {
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "reset", "--config", config], { encoding: "utf8" });
+    assert.equal(result.status, 2);
+    assert.equal(JSON.parse(result.stdout).error, "unknown_command");
+  });
+});
