@@ -31,7 +31,10 @@ test("loads a valid configuration and derives a state directory", async () => {
     const config = await loadConfig(path);
     assert.equal(config.workspace, validConfig.workspace);
     assert.equal(config.defaultResponsavel, "Arthur_Cardoso");
-    assert.ok(config.stateDir.replaceAll("\\", "/").endsWith("MadameLabs/TaskNotesAgent"));
+    const suffix = process.platform === "win32"
+      ? "MadameLabs/TaskNotesAgent"
+      : "madamelabs-tasknotes";
+    assert.ok(config.stateDir.replaceAll("\\", "/").endsWith(suffix));
   });
 });
 

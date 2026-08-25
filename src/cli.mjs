@@ -3,7 +3,7 @@ import { loadConfig, resolveResponsavel } from "./config.mjs";
 import { parseHookPayload } from "./hooks.mjs";
 import { diagnoseState, getBinding, openState, recoverLease } from "./state.mjs";
 import { sessionEnd } from "./domain.mjs";
-import { startWork, stopWork } from "./domain.mjs";
+import { recoverOrphanTimer, recoverWork, startWork, stopWork } from "./domain.mjs";
 import { createTaskNotesApiBackend } from "./backends/tasknotes-api.mjs";
 import { createMtnBackend } from "./backends/mtn.mjs";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,7 @@ const cli = fileURLToPath(import.meta.url);
 const backend = option("--backend", "desktop");
 const STATUSES = ["to-do", "em-andamento", "aprovacao", "pausa", "concluido", "cancelado"];
 const BACKENDS = ["desktop", "headless"];
+const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
 
 // Desktop e o padrao porque so ele cria tarefa com Responsavel, Marca e Projeto.
 // Headless existe para sessao sem Obsidian aberto e nunca e escolhido sozinho.
@@ -35,7 +36,7 @@ function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding
   if (binding) {
     return `Gate TaskNotes satisfeito: sessão vinculada a ${binding.taskPath}. Use somente o adaptador Node deste hub. Ao encerrar: ${base} stop --agent ${agent} --session ${sessionId} --status STATUS --config ${configPath}. STATUS é obrigatório e descreve o que aconteceu de fato: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido (terminou e é verificável sozinho, ou o usuário já confirmou), cancelado (abandonado), pausa (SÓ para stand-by real, nunca como desfecho de trabalho terminado).`;
   }
-  return `Gate TaskNotes obrigatório no madamelabs-code. Antes de trabalhar, execute ${base} open --config ${configPath} e pergunte em qual tarefa atuar; o usuário pode dispensar tarefa e cronômetro explicitamente. Para criar: ${base} create "TÍTULO" --responsavel ${defaultResponsavel} --marca MARCA [--projeto PROJETO] --config ${configPath}. Para iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --config ${configPath}. Use somente este adaptador Node. Ao encerrar, ${base} stop exige --status: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido, cancelado ou pausa (só stand-by real).`;
+  return `Gate TaskNotes obrigatório no madamelabs-code. Antes de trabalhar, execute ${base} open --config ${configPath} e pergunte em qual tarefa atuar; o usuário pode dispensar tarefa e cronômetro explicitamente. Para criar: ${base} create "TÍTULO" --responsavel ${defaultResponsavel} --marca MARCA [--projeto PROJETO] --config ${configPath}. Para promover uma nota com execução: ${base} promote "CAMINHO_EXATO" --responsavel ${defaultResponsavel} --marca Madame_Labs --projeto PROJETO --backend headless --config ${configPath}. Para iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --config ${configPath}. Use somente este adaptador Node. Ao encerrar, ${base} stop exige --status: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido, cancelado ou pausa (só stand-by real).`;
 }
 
 if (configIndex === -1 || !process.argv[configIndex + 1]) {
@@ -50,7 +51,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
     process.exitCode = 1;
   }
   if (config) try {
-    if (!["hook-start", "hook-end", "open", "create", "link-project", "set-status", "start", "stop", "diagnose", "recover"].includes(command)) {
+    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan"].includes(command)) {
       output({ ok: false, error: "unknown_command", message: "unsupported command" });
       process.exitCode = 2;
     } else if (command === "hook-start" || command === "hook-end") {
@@ -66,7 +67,12 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
         if (bound) await sessionEnd({ state, api: backendFor(config, bound.backend ?? backend), sessionKey: hook.sessionKey });
       }
       const binding = command === "hook-start" ? await getBinding(state, hook.sessionKey) : null;
-      output({ ok: true, hookSpecificOutput: { hookEventName: hook.event, additionalContext: gateContext({ agent, configPath: process.argv[configIndex + 1], defaultResponsavel: config.defaultResponsavel, sessionId: hook.sessionId, binding }) } });
+      const additionalContext = gateContext({ agent, configPath: process.argv[configIndex + 1], defaultResponsavel: config.defaultResponsavel, sessionId: hook.sessionId, binding });
+      // Codex exige hookEventName dentro de hookSpecificOutput no SessionStart.
+      // Claude preserva seu evento para o wrapper e os testes de compatibilidade.
+      output(command === "hook-start" && agent === "codex"
+        ? { hookSpecificOutput: { hookEventName: hook.event, additionalContext } }
+        : { ok: true, hookSpecificOutput: { hookEventName: hook.event, additionalContext } });
     } else if (command === "open") {
       const api = backendFor(config, backend);
       const tasks = (await api.listOpen()).map((task) => ({ ...task, path: task.path ?? task.id }));
@@ -84,6 +90,19 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
         projeto: option("--projeto"),
       });
       output({ ok: true, task });
+    } else if (command === "promote") {
+      const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
+      const responsavel = resolveResponsavel(option("--responsavel", config.defaultResponsavel));
+      const marca = option("--marca");
+      const projeto = option("--projeto");
+      if (!taskPath || !responsavel || !marca || !projeto) throw new Error("missing_promotion_metadata");
+      const api = backendFor(config, backend);
+      await api.promoteTask(taskPath, {
+        responsavel: wikilink(responsavel),
+        marca: wikilink(marca),
+        projeto: wikilink(projeto),
+      });
+      output({ ok: true, result: { taskPath } });
     } else if (command === "link-project") {
       const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
       const projetos = options("--projeto").filter((value) => value && !value.startsWith("--"));
@@ -125,8 +144,22 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       const sessionId = option("--session");
       if (!taskPath || !agent || !sessionId) throw new Error("missing_session_or_task");
       const state = await openState(config.stateDir);
-      await recoverLease(state, `${config.vault}:${taskPath}`, `${agent}:${sessionId}`);
-      output({ ok: true, result: { taskPath, released: `${agent}:${sessionId}` } });
+      const sessionKey = `${agent}:${sessionId}`;
+      if (process.argv.includes("--stop-timer")) {
+        const binding = await getBinding(state, sessionKey);
+        const api = backendFor(config, binding?.backend ?? backend);
+        output({ ok: true, result: await recoverWork({ state, api, sessionKey, vault: config.vault, taskPath, stopTimer: true }) });
+      } else {
+        await recoverLease(state, `${config.vault}:${taskPath}`, sessionKey);
+        output({ ok: true, result: { taskPath, released: sessionKey } });
+      }
+    } else if (command === "recover-orphan") {
+      const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
+      const startTime = option("--start-time");
+      if (!taskPath || !startTime) throw new Error("missing_orphan_timer_identity");
+      if (!process.argv.includes("--stop-timer")) throw new Error("missing_stop_timer_confirmation");
+      const api = backendFor(config, backend);
+      output({ ok: true, result: await recoverOrphanTimer({ api, taskPath, startTime }) });
     } else if (command === "diagnose") {
       output({ ok: true, result: await diagnoseState(await openState(config.stateDir)) });
     } else {

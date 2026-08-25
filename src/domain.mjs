@@ -1,4 +1,4 @@
-import { bindSession, confirmSession, getBinding, releaseSession } from "./state.mjs";
+import { bindSession, confirmSession, getBinding, recoverLease, releaseSession } from "./state.mjs";
 
 export async function startWork({ state, api, sessionKey, vault, taskPath, backend = "desktop" }) {
   const existing = await getBinding(state, sessionKey);
@@ -28,6 +28,32 @@ export async function stopWork({ state, api, sessionKey, status }) {
   if (binding.timerIdentity && await api.verifyTimer(binding.taskPath, binding.timerIdentity)) await api.stopTimer(binding.taskPath);
   await releaseSession(state, sessionKey);
   return { ok: true, stopped: true };
+}
+
+export async function recoverWork({ state, api, sessionKey, vault, taskPath, stopTimer = false }) {
+  const binding = await getBinding(state, sessionKey);
+  if (!binding || binding.vault !== vault || binding.taskPath !== taskPath) throw new Error("recovery_binding_not_found");
+
+  let timerStopped = false;
+  if (stopTimer) {
+    const activeTimer = (await api.getActiveTimers()).find((item) => (item.task?.id ?? item.task?.path) === taskPath);
+    if (activeTimer) {
+      if (!binding.timerIdentity || !await api.verifyTimer(taskPath, binding.timerIdentity)) throw new Error("timer_identity_mismatch");
+      await api.stopTimer(taskPath);
+      timerStopped = true;
+    }
+  }
+
+  await recoverLease(state, `${vault}:${taskPath}`, sessionKey);
+  return { taskPath, released: sessionKey, timerStopped };
+}
+
+export async function recoverOrphanTimer({ api, taskPath, startTime }) {
+  const activeTimer = (await api.getActiveTimers()).find((item) => (item.task?.id ?? item.task?.path) === taskPath);
+  if (!activeTimer) throw new Error("orphan_timer_not_active");
+  if (activeTimer.session?.startTime !== startTime) throw new Error("orphan_timer_identity_mismatch");
+  await api.stopTimer(taskPath);
+  return { taskPath, startTime, timerStopped: true };
 }
 
 export async function sessionEnd({ state, api, sessionKey }) {

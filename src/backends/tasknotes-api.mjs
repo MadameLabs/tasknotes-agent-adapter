@@ -37,6 +37,7 @@ export function createTaskNotesApiBackend({ baseUrl, authToken }) {
       }
       return { ...created, path };
     },
+    promoteTask: () => { throw new Error("unsupported_backend"); },
     getTask: (path) => request(taskUrl(path)),
     setProjects: (path, projects) => request(taskUrl(path), { method: "PUT", body: JSON.stringify({ projects: projects.map(wikilink) }) }),
     getActiveTimers,

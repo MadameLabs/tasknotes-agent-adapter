@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
-import { writeFile, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const cli = new URL("../src/cli.mjs", import.meta.url);
+const mtn = fileURLToPath(new URL("../../repos/mdbase-tasknotes/dist/cli.js", import.meta.url));
 const sessionStartWrapper = fileURLToPath(new URL("../../scripts/tasknotes-session-start.ps1", import.meta.url));
 const run = promisify(execFile);
 
@@ -45,7 +46,7 @@ async function fixture(callback) {
     headless: { mtnPath: "mtn" },
     stateDir: join(dir, "state"),
   }));
-  try { await callback({ config, dir, calls }); }
+  try { await callback({ config, dir, calls, timers }); }
   finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(dir, { recursive: true, force: true });
@@ -71,8 +72,25 @@ test("SessionStart injects an actionable Node-only task gate", async () => {
     assert.equal(output.hookSpecificOutput.hookEventName, "SessionStart");
     assert.match(output.hookSpecificOutput.additionalContext, /gate TaskNotes/i);
     assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs open/);
+    assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs promote/);
+    assert.match(output.hookSpecificOutput.additionalContext, /--backend headless/);
     assert.match(output.hookSpecificOutput.additionalContext, /dispensar/i);
     assert.doesNotMatch(output.hookSpecificOutput.additionalContext, /timer_cli|bridge\.timer_cli/);
+  });
+});
+
+test("Codex SessionStart identifies its required hook event", async () => {
+  await fixture(async ({ config, dir }) => {
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-start", "--agent", "codex", "--config", config], {
+      encoding: "utf8",
+      env: { ...process.env, LOCALAPPDATA: dir },
+      input: JSON.stringify({ session_id: "abc", cwd: "C:/madamelabs-code" }),
+    });
+    assert.equal(result.status, 0);
+    const output = JSON.parse(result.stdout);
+    assert.deepEqual(Object.keys(output), ["hookSpecificOutput"]);
+    assert.equal(output.hookSpecificOutput.hookEventName, "SessionStart");
+    assert.match(output.hookSpecificOutput.additionalContext, /gate TaskNotes/i);
   });
 });
 
@@ -115,6 +133,39 @@ test("open and create execute against the TaskNotes API", async () => {
     assert.deepEqual(calls.find((call) => call.method === "POST").body.projects, ["[[CRM]]"]);
     assert.deepEqual(calls.find((call) => call.method === "PUT").body, { Responsavel: ["[[Arthur_Cardoso]]"], Marca: ["[[Madame_Labs]]"] });
   });
+});
+
+test("promote turns an existing planning note into a headless task", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-promote-"));
+  const vault = join(dir, "vault");
+  const config = join(dir, "config.json");
+  try {
+    assert.equal(spawnSync(process.execPath, [mtn, "init", vault], { encoding: "utf8" }).status, 0);
+    await mkdir(join(vault, "01-planejamento"));
+    await writeFile(join(vault, "01-planejamento", "Brainstorm.md"), "---\ntitle: Brainstorm\n---\n");
+    await writeFile(config, JSON.stringify({
+      workspace: "madamelabs-code",
+      vault: "ENGENHARIA",
+      vaultPath: vault,
+      defaultResponsavel: "arthur",
+      desktop: { baseUrl: "http://127.0.0.1:1", authToken: "token" },
+      headless: { mtnPath: mtn },
+      stateDir: join(dir, "state"),
+    }));
+
+    const promoted = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "promote", "01-planejamento/Brainstorm.md",
+      "--responsavel", "arthur", "--marca", "Madame_Labs", "--projeto", "tasknotes-dual-vault-e-adaptador",
+      "--backend", "headless", "--config", config])).stdout);
+
+    assert.deepEqual(promoted, { ok: true, result: { taskPath: "01-planejamento/Brainstorm.md" } });
+    const note = await (await import("node:fs/promises")).readFile(join(vault, "01-planejamento", "Brainstorm.md"), "utf8");
+    assert.match(note, /- task/);
+    assert.match(note, /Responsavel:/);
+    assert.match(note, /Marca:/);
+    assert.match(note, /Projeto:/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("link-project attaches an existing task to one or more projects", async () => {
@@ -212,6 +263,120 @@ test("recover releases only the lease whose owner is named explicitly", async ()
 
     // Recuperacao mexe so no estado local: nenhum timer pode ser parado por ela.
     assert.equal(calls.some((call) => call.url.endsWith("/time/stop")), false);
+  });
+});
+
+test("recover --stop-timer stops the owned timer without changing task status", async () => {
+  await fixture(async ({ config, calls }) => {
+    const args = ["--agent", "codex", "--session", "orfa", "--config", config];
+    await run(process.execPath, [fileURLToPath(cli), "start", "01-planejamento/plano.md", ...args]);
+    calls.length = 0;
+
+    const recovered = JSON.parse((await run(process.execPath, [
+      fileURLToPath(cli), "recover", "01-planejamento/plano.md", "--stop-timer", ...args,
+    ])).stdout);
+
+    assert.deepEqual(recovered.result, {
+      taskPath: "01-planejamento/plano.md",
+      released: "codex:orfa",
+      timerStopped: true,
+    });
+    assert.equal(calls.filter((call) => call.url.endsWith("/time/stop")).length, 1);
+    assert.equal(calls.some((call) => call.method === "PUT" && call.body?.status), false);
+    const state = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "diagnose", "--config", config])).stdout);
+    assert.deepEqual(state.result, { bindings: [], leases: [], divergences: [] });
+  });
+});
+
+test("recover --stop-timer refuses when the session no longer has a binding", async () => {
+  await fixture(async ({ config, calls }) => {
+    const result = spawnSync(process.execPath, [
+      fileURLToPath(cli), "recover", "01-planejamento/plano.md", "--stop-timer",
+      "--agent", "codex", "--session", "ausente", "--config", config,
+    ], { encoding: "utf8" });
+
+    assert.equal(result.status, 2);
+    assert.equal(JSON.parse(result.stdout).error, "recovery_binding_not_found");
+    assert.equal(calls.some((call) => call.url.endsWith("/time/stop")), false);
+  });
+});
+
+test("recover --stop-timer preserves state when the timer identity diverges", async () => {
+  await fixture(async ({ config, calls, timers }) => {
+    const args = ["--agent", "codex", "--session", "orfa", "--config", config];
+    await run(process.execPath, [fileURLToPath(cli), "start", "01-planejamento/plano.md", ...args]);
+    timers[0].session.startTime = "other";
+    calls.length = 0;
+
+    await assert.rejects(
+      run(process.execPath, [fileURLToPath(cli), "recover", "01-planejamento/plano.md", "--stop-timer", ...args]),
+      (error) => {
+        assert.equal(error.code, 2);
+        assert.equal(JSON.parse(error.stdout).error, "timer_identity_mismatch");
+        return true;
+      },
+    );
+    assert.equal(calls.some((call) => call.url.endsWith("/time/stop")), false);
+    const state = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "diagnose", "--config", config])).stdout);
+    assert.equal(state.result.leases.length, 1);
+  });
+});
+
+test("a new session starts the same task after a successful timer recovery", async () => {
+  await fixture(async ({ config, calls }) => {
+    const orphan = ["--agent", "codex", "--session", "orfa", "--config", config];
+    await run(process.execPath, [fileURLToPath(cli), "start", "01-planejamento/plano.md", ...orphan]);
+    await run(process.execPath, [
+      fileURLToPath(cli), "recover", "01-planejamento/plano.md", "--stop-timer", ...orphan,
+    ]);
+    calls.length = 0;
+
+    const started = JSON.parse((await run(process.execPath, [
+      fileURLToPath(cli), "start", "01-planejamento/plano.md",
+      "--agent", "codex", "--session", "nova", "--config", config,
+    ])).stdout);
+
+    assert.equal(started.result.sessionKey, "codex:nova");
+    assert.equal(calls.filter((call) => call.url.endsWith("/time/start")).length, 1);
+  });
+});
+
+test("recover-orphan stops a timer whose released binding no longer exists", async () => {
+  await fixture(async ({ config, calls }) => {
+    const args = ["--agent", "codex", "--session", "orfa", "--config", config];
+    await run(process.execPath, [fileURLToPath(cli), "start", "01-planejamento/plano.md", ...args]);
+    await run(process.execPath, [fileURLToPath(cli), "recover", "01-planejamento/plano.md", ...args]);
+    calls.length = 0;
+
+    const recovered = JSON.parse((await run(process.execPath, [
+      fileURLToPath(cli), "recover-orphan", "01-planejamento/plano.md",
+      "--start-time", "2026-08-21T00:00:00.000Z", "--stop-timer", "--config", config,
+    ])).stdout);
+
+    assert.deepEqual(recovered.result, {
+      taskPath: "01-planejamento/plano.md",
+      startTime: "2026-08-21T00:00:00.000Z",
+      timerStopped: true,
+    });
+    assert.equal(calls.filter((call) => call.url.endsWith("/time/stop")).length, 1);
+    assert.equal(calls.some((call) => call.method === "PUT" && call.body?.status), false);
+  });
+});
+
+test("recover-orphan requires both an explicit identity and stop confirmation", async () => {
+  await fixture(async ({ config }) => {
+    const missingIdentity = spawnSync(process.execPath, [
+      fileURLToPath(cli), "recover-orphan", "01-planejamento/plano.md", "--stop-timer", "--config", config,
+    ], { encoding: "utf8" });
+    assert.equal(missingIdentity.status, 2);
+    assert.equal(JSON.parse(missingIdentity.stdout).error, "missing_orphan_timer_identity");
+
+    const missingConfirmation = spawnSync(process.execPath, [
+      fileURLToPath(cli), "recover-orphan", "01-planejamento/plano.md",
+      "--start-time", "2026-08-21T00:00:00.000Z", "--config", config,
+    ], { encoding: "utf8" });
+    assert.equal(missingConfirmation.status, 2);
+    assert.equal(JSON.parse(missingConfirmation.stdout).error, "missing_stop_timer_confirmation");
   });
 });
 

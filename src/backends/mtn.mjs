@@ -37,7 +37,7 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
     listOpen: async () => (await listTasks()).filter((task) => !task.archived && !closed.has(task.status)),
     getTask: findTask,
     getActiveTimers,
-    setStatus: (path, status) => invoke(["update", path, "--set", `status=${status}`]),
+    setStatus: (path, status) => invoke(["update", path, "--status", status]),
     async startTimer(path) {
       await invoke(["timer", "start", path]);
       // Identidade lida de volta do vault, nunca do relogio local: e ela que
@@ -47,6 +47,12 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       return { taskPath: path, startTime };
     },
     stopTimer: (path) => invoke(["timer", "stop", path]),
+    promoteTask: (path, { responsavel, marca, projeto }) => invoke([
+      "promote", path,
+      "--responsavel", responsavel,
+      "--marca", marca,
+      "--projeto", projeto,
+    ]),
     verifyTimer: async (path, identity) =>
       (await getActiveTimers()).some((item) => item.task.id === path && item.session.startTime === identity?.startTime),
     // Criar tarefa exige Responsavel, Marca e Projeto, e o --set seguro recusa
