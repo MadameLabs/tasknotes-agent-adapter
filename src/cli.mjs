@@ -17,7 +17,7 @@ const option = (name, fallback = undefined) => {
 };
 const options = (name) => process.argv.flatMap((value, index) => value === name ? [process.argv[index + 1]] : []);
 const cli = fileURLToPath(import.meta.url);
-const backend = option("--backend", "desktop");
+const requestedBackend = option("--backend");
 const STATUSES = ["to-do", "em-andamento", "aprovacao", "pausa", "concluido", "cancelado"];
 const BACKENDS = ["desktop", "headless"];
 const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
@@ -31,10 +31,13 @@ function backendFor(config, name) {
     : createTaskNotesApiBackend(config.desktop);
 }
 
-function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding }) {
+function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding, backend }) {
   const base = `node ${cli}`;
   if (binding) {
     return `Gate TaskNotes satisfeito: sessão vinculada a ${binding.taskPath}. Use somente o adaptador Node deste hub. Ao encerrar: ${base} stop --agent ${agent} --session ${sessionId} --status STATUS --config ${configPath}. STATUS é obrigatório e descreve o que aconteceu de fato: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido (terminou e é verificável sozinho, ou o usuário já confirmou), cancelado (abandonado), pausa (SÓ para stand-by real, nunca como desfecho de trabalho terminado).`;
+  }
+  if (backend === "headless") {
+    return `Gate TaskNotes obrigatório no madamelabs-code. Antes de trabalhar, execute ${base} open --backend headless --config ${configPath} e pergunte em qual tarefa atuar; o usuário pode dispensar tarefa e cronômetro explicitamente. Criação direta não é suportada no backend headless; para transformar uma nota existente em tarefa: ${base} promote "CAMINHO_EXATO" --responsavel ${defaultResponsavel} --marca Madame_Labs --projeto PROJETO --backend headless --config ${configPath}. Para iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --backend headless --config ${configPath}. Use somente este adaptador Node. Ao encerrar, ${base} stop exige --status: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido, cancelado ou pausa (só stand-by real).`;
   }
   return `Gate TaskNotes obrigatório no madamelabs-code. Antes de trabalhar, execute ${base} open --config ${configPath} e pergunte em qual tarefa atuar; o usuário pode dispensar tarefa e cronômetro explicitamente. Para criar: ${base} create "TÍTULO" --responsavel ${defaultResponsavel} --marca MARCA [--projeto PROJETO] --config ${configPath}. Para promover uma nota com execução: ${base} promote "CAMINHO_EXATO" --responsavel ${defaultResponsavel} --marca Madame_Labs --projeto PROJETO --backend headless --config ${configPath}. Para iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --config ${configPath}. Use somente este adaptador Node. Ao encerrar, ${base} stop exige --status: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido, cancelado ou pausa (só stand-by real).`;
 }
@@ -51,6 +54,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
     process.exitCode = 1;
   }
   if (config) try {
+    const backend = requestedBackend ?? config.defaultBackend ?? "desktop";
     if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan"].includes(command)) {
       output({ ok: false, error: "unknown_command", message: "unsupported command" });
       process.exitCode = 2;
@@ -67,7 +71,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
         if (bound) await sessionEnd({ state, api: backendFor(config, bound.backend ?? backend), sessionKey: hook.sessionKey });
       }
       const binding = command === "hook-start" ? await getBinding(state, hook.sessionKey) : null;
-      const additionalContext = gateContext({ agent, configPath: process.argv[configIndex + 1], defaultResponsavel: config.defaultResponsavel, sessionId: hook.sessionId, binding });
+      const additionalContext = gateContext({ agent, configPath: process.argv[configIndex + 1], defaultResponsavel: config.defaultResponsavel, sessionId: hook.sessionId, binding, backend });
       // Codex exige hookEventName dentro de hookSpecificOutput no SessionStart.
       // Claude preserva seu evento para o wrapper e os testes de compatibilidade.
       output(command === "hook-start" && agent === "codex"

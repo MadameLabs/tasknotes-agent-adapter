@@ -36,6 +36,9 @@ export async function loadConfig(path) {
   requiredString(config, "vault");
   requiredString(config, "vaultPath");
   requiredString(config, "defaultResponsavel");
+  if (config.defaultBackend !== undefined && !["desktop", "headless"].includes(config.defaultBackend)) {
+    throw new Error("invalid_defaultBackend");
+  }
   const defaultResponsavel = resolveResponsavel(config.defaultResponsavel);
   if (!defaultResponsavel) throw new Error("invalid_defaultResponsavel");
   config.defaultResponsavel = defaultResponsavel;

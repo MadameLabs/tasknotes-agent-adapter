@@ -60,3 +60,9 @@ test("rejects an unsupported default responsavel", async () => {
     assert.rejects(loadConfig(path), /invalid_defaultResponsavel/),
   );
 });
+
+test("rejects an unsupported default backend", async () => {
+  await withConfig({ ...validConfig, defaultBackend: "automatic" }, (path) =>
+    assert.rejects(loadConfig(path), /invalid_defaultBackend/),
+  );
+});

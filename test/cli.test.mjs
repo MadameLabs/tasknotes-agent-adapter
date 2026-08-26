@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
-import { mkdir, writeFile, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,8 +9,9 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const cli = new URL("../src/cli.mjs", import.meta.url);
-const mtn = fileURLToPath(new URL("../../repos/mdbase-tasknotes/dist/cli.js", import.meta.url));
+const mtn = process.env.MTN_PATH ?? fileURLToPath(new URL("../../repos/mdbase-tasknotes/dist/cli.js", import.meta.url));
 const sessionStartWrapper = fileURLToPath(new URL("../../scripts/tasknotes-session-start.ps1", import.meta.url));
+const codexHooks = fileURLToPath(new URL("../../.codex/hooks.json", import.meta.url));
 const run = promisify(execFile);
 
 async function fixture(callback) {
@@ -92,6 +93,54 @@ test("Codex SessionStart identifies its required hook event", async () => {
     assert.equal(output.hookSpecificOutput.hookEventName, "SessionStart");
     assert.match(output.hookSpecificOutput.additionalContext, /gate TaskNotes/i);
   });
+});
+
+test("headless SessionStart injects commands for the headless backend", async () => {
+  await fixture(async ({ config, dir }) => {
+    const localConfig = JSON.parse(await readFile(config, "utf8"));
+    await writeFile(config, JSON.stringify({ ...localConfig, defaultBackend: "headless" }));
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-start", "--agent", "codex", "--config", config], {
+      encoding: "utf8",
+      env: { ...process.env, LOCALAPPDATA: dir },
+      input: JSON.stringify({ session_id: "headless", cwd: "/workspace" }),
+    });
+    assert.equal(result.status, 0);
+    const context = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
+    assert.match(context, /execute node .* open --backend headless/);
+    assert.match(context, /open --backend headless/);
+    assert.match(context, /start "CAMINHO_EXATO" .*--backend headless/);
+    assert.match(context, /cria[cç][aã]o direta.*n[aã]o.*suportada/i);
+  });
+});
+
+test("Codex SessionStart hook runs from a new workspace path", { skip: process.platform === "win32" }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-portable-hook-"));
+  try {
+    await mkdir(join(dir, "bin"));
+    await symlink(process.execPath, join(dir, "bin", "node"));
+    await symlink(fileURLToPath(new URL("..", cli)), join(dir, "agent-adapter"));
+    await writeFile(join(dir, "config.agent.local.json"), JSON.stringify({
+      workspace: "madamelabs-code",
+      vault: "ENGENHARIA",
+      vaultPath: join(dir, "ENGENHARIA"),
+      defaultResponsavel: "arthur",
+      desktop: { baseUrl: "http://127.0.0.1:1", authToken: "token" },
+      headless: { mtnPath: "mtn" },
+      stateDir: join(dir, "state"),
+    }));
+    const hooks = JSON.parse(await readFile(codexHooks, "utf8"));
+    const command = hooks.hooks.SessionStart[0].hooks[0].command;
+    const result = spawnSync("sh", ["-c", command], {
+      cwd: dir,
+      encoding: "utf8",
+      input: JSON.stringify({ session_id: "portable", cwd: dir }),
+      env: { ...process.env, PATH: `${join(dir, "bin")}:${process.env.PATH}` },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).hookSpecificOutput.hookEventName, "SessionStart");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("Claude SessionEnd keeps the host event name", async () => {
