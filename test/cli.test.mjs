@@ -76,7 +76,37 @@ test("SessionStart injects an actionable Node-only task gate", async () => {
     assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs promote/);
     assert.match(output.hookSpecificOutput.additionalContext, /--backend headless/);
     assert.match(output.hookSpecificOutput.additionalContext, /dispensar/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /a cada mensagem/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /artefato durável/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /detectar.*materializar.*promover.*iniciar.*concluir.*avançar/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /Plan Mode.*não.*tarefa|não.*tarefa.*Plan Mode/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /fase terminada.*concluido/i);
+    assert.doesNotMatch(output.hookSpecificOutput.additionalContext, /Antes de trabalhar.*pergunte em qual tarefa atuar/i);
+    assert.doesNotMatch(output.hookSpecificOutput.additionalContext, /aprova[cç][aã]o.*desfecho normal/i);
     assert.doesNotMatch(output.hookSpecificOutput.additionalContext, /timer_cli|bridge\.timer_cli/);
+  });
+});
+
+test("SessionStart tells a bound session how to advance to the next artifact", async () => {
+  await fixture(async ({ config, dir }) => {
+    const env = { ...process.env, LOCALAPPDATA: dir };
+    const started = spawnSync(process.execPath, [
+      fileURLToPath(cli), "start", "06-tarefas/CRM.md",
+      "--agent", "codex", "--session", "bound", "--config", config,
+    ], { encoding: "utf8", env });
+    assert.equal(started.status, 0, started.stdout + started.stderr);
+
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-start", "--agent", "codex", "--config", config], {
+      encoding: "utf8",
+      env,
+      input: JSON.stringify({ session_id: "bound", cwd: "C:/madamelabs-code" }),
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const context = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
+    assert.match(context, /sessão vinculada/i);
+    assert.match(context, /nova fase/i);
+    assert.match(context, /stop .*--status concluido/i);
+    assert.match(context, /próximo artefato/i);
   });
 });
 
