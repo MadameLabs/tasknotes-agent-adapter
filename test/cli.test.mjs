@@ -479,3 +479,29 @@ test("reset is not a real command and must not answer ok", async () => {
     assert.equal(JSON.parse(result.stdout).error, "unknown_command");
   });
 });
+
+test("a backend failure reports the reason instead of a fixed sentence", async () => {
+  // O catch final cortava tudo depois do primeiro ":" e trocava a causa por
+  // uma frase generica, entao "File not found" nunca chegava a quem chamou.
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-reason-"));
+  try {
+    const fake = join(dir, "fake-mtn.mjs");
+    await writeFile(fake, `console.log('\u001b[31m✗ Failed to read task: File not found: alvo.md\u001b[39m'); process.exit(1);`);
+    const configPath = join(dir, "config.json");
+    await writeFile(configPath, JSON.stringify({
+      workspace: "teste", vault: "V", vaultPath: dir, defaultResponsavel: "Arthur_Cardoso",
+      desktop: { baseUrl: "http://127.0.0.1:1", authToken: "x" },
+      headless: { mtnPath: fake },
+    }));
+
+    const result = spawnSync(process.execPath, [
+      fileURLToPath(cli), "set-status", "alvo.md", "--status", "pausa",
+      "--backend", "headless", "--config", configPath,
+    ], { encoding: "utf8" });
+
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error, "mtn_failed");
+    assert.match(payload.message, /File not found: alvo\.md/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

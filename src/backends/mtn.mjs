@@ -19,7 +19,13 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       const { stdout } = await run(command, [...prefix, ...args, "--path", vaultPath], { windowsHide: true });
       return stdout;
     } catch (error) {
-      throw new Error(`mtn_failed:${error.code ?? "unknown"}`);
+      // O mtn imprime a causa como "✗ unknown_field:Responsavel" e sai com 1.
+      // Reduzir tudo a "mtn_failed:1" jogava fora justamente essa linha, que e
+      // a unica que diz o que precisa ser corrigido.
+      const printed = [error.stdout, error.stderr].filter(Boolean).join("\n").replace(/\u001b\[[0-9;]*m/g, "");
+      const lines = printed.split(/[\r\n]+/).map((line) => line.trim()).filter(Boolean);
+      const reason = (lines.find((line) => line.startsWith("✗")) ?? lines[0] ?? "").replace(/^✗\s*/, "");
+      throw new Error(`mtn_failed:${error.code ?? "unknown"}${reason ? `:${reason}` : ""}`);
     }
   }
   // O CLI pode emitir BOM quando o console do Windows esta em UTF-8.
@@ -47,11 +53,20 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       return { taskPath: path, startTime };
     },
     stopTimer: (path) => invoke(["timer", "stop", path]),
+    // O mtn nao tem um comando `promote`: promover e compor as primitivas que
+    // ele tem. A tag `task` sozinha nao basta, porque `explicit_type_keys`
+    // inclui `types` -- e `types: [task]` que faz a colecao enxergar a nota
+    // como tarefa, deixando o `type` original dela intacto. Responsavel, Marca
+    // e Projeto vao por --set-new-list porque sao listas no vault: gravadas
+    // como string, derrubam a leitura da colecao inteira.
     promoteTask: (path, { responsavel, marca, projeto }) => invoke([
-      "promote", path,
-      "--responsavel", responsavel,
-      "--marca", marca,
-      "--projeto", projeto,
+      "update", path,
+      "--add-tag", "task",
+      "--status", "to-do",
+      "--set-new-list", "types=task",
+      "--set-new-list", `Responsavel=${responsavel}`,
+      "--set-new-list", `Marca=${marca}`,
+      "--set-new-list", `Projeto=${projeto}`,
     ]),
     verifyTimer: async (path, identity) =>
       (await getActiveTimers()).some((item) => item.task.id === path && item.session.startTime === identity?.startTime),
