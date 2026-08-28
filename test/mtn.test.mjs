@@ -37,7 +37,6 @@ test("promotes one exact note with the approved TaskNotes metadata", async () =>
       "update", "01-planejamento/Brainstorm.md",
       "--add-tag", "task",
       "--status", "to-do",
-      "--set-new-list", "types=task",
       "--set-new-list", "Responsavel=[[Arthur_Cardoso]]",
       "--set-new-list", "Marca=[[Madame_Labs]]",
       "--set-new-list", "Projeto=[[tasknotes-dual-vault-e-adaptador]]",

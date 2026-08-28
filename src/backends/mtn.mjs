@@ -54,16 +54,15 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
     },
     stopTimer: (path) => invoke(["timer", "stop", path]),
     // O mtn nao tem um comando `promote`: promover e compor as primitivas que
-    // ele tem. A tag `task` sozinha nao basta, porque `explicit_type_keys`
-    // inclui `types` -- e `types: [task]` que faz a colecao enxergar a nota
-    // como tarefa, deixando o `type` original dela intacto. Responsavel, Marca
-    // e Projeto vao por --set-new-list porque sao listas no vault: gravadas
-    // como string, derrubam a leitura da colecao inteira.
+    // ele tem. Quem marca a nota como tarefa e a tag `task`, igual ao
+    // TaskNotes -- nenhum campo de tipo e escrito, e o `type` original da nota
+    // fica intacto. Responsavel, Marca e Projeto vao por --set-new-list porque
+    // sao listas no vault: gravadas como string, derrubam a leitura da
+    // colecao inteira.
     promoteTask: (path, { responsavel, marca, projeto }) => invoke([
       "update", path,
       "--add-tag", "task",
       "--status", "to-do",
-      "--set-new-list", "types=task",
       "--set-new-list", `Responsavel=${responsavel}`,
       "--set-new-list", `Marca=${marca}`,
       "--set-new-list", `Projeto=${projeto}`,
