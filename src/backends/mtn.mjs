@@ -25,7 +25,7 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       const printed = [error.stdout, error.stderr].filter(Boolean).join("\n").replace(/\u001b\[[0-9;]*m/g, "");
       const lines = printed.split(/[\r\n]+/).map((line) => line.trim()).filter(Boolean);
       const reason = (lines.find((line) => line.startsWith("✗")) ?? lines[0] ?? "").replace(/^✗\s*/, "");
-      throw new Error(`mtn_failed:${error.code ?? "unknown"}${reason ? `:${reason}` : ""}`);
+      throw new Error(`mtn_failed:${reason || error.code || "unknown"}`);
     }
   }
   // O CLI pode emitir BOM quando o console do Windows esta em UTF-8.
