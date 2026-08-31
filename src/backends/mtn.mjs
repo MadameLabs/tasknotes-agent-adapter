@@ -54,14 +54,13 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       return { taskPath: path, startTime };
     },
     stopTimer: (path) => invoke(["timer", "stop", path]),
-    // O mtn tem `promote`, que grava Responsavel, Marca e Projeto como listas
-    // -- gravados como string, derrubam a leitura da colecao inteira -- e
-    // preserva o `type` original da nota. E o mesmo caminho do createTask.
+    // `update` aceita os campos de lista e preserva o `type` original da nota.
     promoteTask: (path, { responsavel, marca, projeto }) => invoke([
-      "promote", path,
-      "--responsavel", wikilink(responsavel),
-      "--marca", wikilink(marca),
-      "--projeto", wikilink(projeto),
+      "update", path,
+      "--add-tag", "task",
+      "--set-new-list", `Responsavel=${wikilink(responsavel)}`,
+      "--set-new-list", `Marca=${wikilink(marca)}`,
+      "--set-new-list", `Projeto=${wikilink(projeto)}`,
     ]),
     async createTask(input) {
       const before = new Set((await listTasks()).map((task) => task.path));
@@ -69,10 +68,11 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       const created = (await listTasks()).find((task) => !before.has(task.path) && task.title === input.title);
       if (!created) throw new Error("created_task_not_found");
       await invoke([
-        "promote", created.path,
-        "--responsavel", wikilink(input.responsavel),
-        "--marca", wikilink(input.marcas?.[0] ?? "Madame_Labs"),
-        "--projeto", wikilink(input.projeto),
+        "update", created.path,
+        "--add-tag", "task",
+        "--set-new-list", `Responsavel=${wikilink(input.responsavel)}`,
+        "--set-new-list", `Marca=${wikilink(input.marcas?.[0] ?? "Madame_Labs")}`,
+        "--set-new-list", `Projeto=${wikilink(input.projeto)}`,
       ]);
       return (await findTask(created.path)) ?? created;
     },
