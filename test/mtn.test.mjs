@@ -1,9 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createMtnBackend } from "../src/backends/mtn.mjs";
+import { mtn } from "./mtn-path.mjs";
+
+const taskType = fileURLToPath(new URL("../../ENGENHARIA/_types/task.md", import.meta.url));
+const run = promisify(execFile);
 
 test("passes an exact path as an execFile argument", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-"));
@@ -56,5 +63,47 @@ test("sets status through the mtn mapped status option", async () => {
     assert.deepEqual(JSON.parse(await (await import("node:fs/promises")).readFile(output, "utf8")), [
       "update", "01-planejamento/Brainstorm.md", "--status", "em-andamento", "--path", "C:/vault",
     ]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("creates and promotes a headless task with the required metadata", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-create-"));
+  const vault = join(dir, "vault");
+  try {
+    await run(process.execPath, [mtn, "init", vault]);
+    const backend = createMtnBackend({ mtnPath: mtn, vaultPath: vault });
+
+    const task = await backend.createTask({
+      title: "Corrigir gate TaskNotes headless",
+      responsavel: "Arthur_Cardoso",
+      marcas: ["Madame_Labs"],
+      projeto: "tasknotes-dual-vault-e-adaptador",
+    });
+
+    const note = await readFile(join(vault, task.path), "utf8");
+    assert.match(note, /- task/);
+    assert.match(note, /- '\[\[Arthur_Cardoso\]\]'/);
+    assert.match(note, /- '\[\[Madame_Labs\]\]'/);
+    assert.match(note, /- '\[\[tasknotes-dual-vault-e-adaptador\]\]'/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("creates a headless task with the vault TaskNotes type", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-vault-type-"));
+  const vault = join(dir, "vault");
+  try {
+    await run(process.execPath, [mtn, "init", vault]);
+    await writeFile(join(vault, "_types", "task.md"), await readFile(taskType));
+    const backend = createMtnBackend({ mtnPath: mtn, vaultPath: vault });
+
+    const task = await backend.createTask({
+      title: "Criar com tipo real do vault",
+      responsavel: "Arthur_Cardoso",
+      marcas: ["Madame_Labs"],
+      projeto: "tasknotes-dual-vault-e-adaptador",
+    });
+
+    const note = await readFile(join(vault, task.path), "utf8");
+    assert.match(note, /Status: to-do/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

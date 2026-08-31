@@ -7,9 +7,9 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { mtn } from "./mtn-path.mjs";
 
 const cli = new URL("../src/cli.mjs", import.meta.url);
-const mtn = process.env.MTN_PATH ?? fileURLToPath(new URL("../../repos/mdbase-tasknotes/dist/cli.js", import.meta.url));
 const sessionStartWrapper = fileURLToPath(new URL("../../scripts/tasknotes-session-start.ps1", import.meta.url));
 const codexHooks = fileURLToPath(new URL("../../.codex/hooks.json", import.meta.url));
 const run = promisify(execFile);
@@ -72,9 +72,10 @@ test("SessionStart injects an actionable Node-only task gate", async () => {
     const output = JSON.parse(result.stdout);
     assert.equal(output.hookSpecificOutput.hookEventName, "SessionStart");
     assert.match(output.hookSpecificOutput.additionalContext, /gate TaskNotes/i);
-    assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs open/);
+    assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs open --backend headless/);
+    assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs create .*--marca MARCA --projeto PROJETO --backend headless/);
     assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs promote/);
-    assert.match(output.hookSpecificOutput.additionalContext, /--backend headless/);
+    assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs start .*--backend headless/);
     assert.match(output.hookSpecificOutput.additionalContext, /dispensar/i);
     assert.doesNotMatch(output.hookSpecificOutput.additionalContext, /timer_cli|bridge\.timer_cli/);
   });
@@ -92,10 +93,31 @@ test("Codex SessionStart identifies its required hook event", async () => {
     assert.deepEqual(Object.keys(output), ["hookSpecificOutput"]);
     assert.equal(output.hookSpecificOutput.hookEventName, "SessionStart");
     assert.match(output.hookSpecificOutput.additionalContext, /gate TaskNotes/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /agente decide o status/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /ambiguidade/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /aprovacao.*concluido.*cancelado.*pausa/i);
   });
 });
 
-test("headless SessionStart injects commands for the headless backend", async () => {
+test("SessionStart vinculado exige decisão contextual e status explícito", async () => {
+  await fixture(async ({ config, dir }) => {
+    await run(process.execPath, [fileURLToPath(cli), "start", "01-planejamento/plano.md",
+      "--agent", "codex", "--session", "vinculada", "--config", config]);
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-start", "--agent", "codex", "--config", config], {
+      encoding: "utf8",
+      env: { ...process.env, LOCALAPPDATA: dir },
+      input: JSON.stringify({ session_id: "vinculada", cwd: "C:/madamelabs-code" }),
+    });
+    assert.equal(result.status, 0);
+    const context = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
+    assert.match(context, /agente decide o status/i);
+    assert.match(context, /ambiguidade/i);
+    assert.match(context, /--status STATUS/);
+    assert.match(context, /aprovacao.*concluido.*cancelado.*pausa/i);
+  });
+});
+
+test("headless SessionStart mantém os comandos explicitamente headless", async () => {
   await fixture(async ({ config, dir }) => {
     const localConfig = JSON.parse(await readFile(config, "utf8"));
     await writeFile(config, JSON.stringify({ ...localConfig, defaultBackend: "headless" }));
@@ -106,10 +128,10 @@ test("headless SessionStart injects commands for the headless backend", async ()
     });
     assert.equal(result.status, 0);
     const context = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
-    assert.match(context, /execute node .* open --backend headless/);
     assert.match(context, /open --backend headless/);
+    assert.match(context, /create .*--backend headless/);
     assert.match(context, /start "CAMINHO_EXATO" .*--backend headless/);
-    assert.match(context, /cria[cç][aã]o direta.*n[aã]o.*suportada/i);
+    assert.match(context, /agente decide o status/i);
   });
 });
 
@@ -141,6 +163,20 @@ test("Codex SessionStart hook runs from a new workspace path", { skip: process.p
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("uses config defaultBackend when the command omits --backend", async () => {
+  await fixture(async ({ config, dir }) => {
+    const localConfig = JSON.parse(await readFile(config, "utf8"));
+    const failingMtn = join(dir, "failing-mtn.mjs");
+    await writeFile(failingMtn, "process.exit(17);\n");
+    await writeFile(config, JSON.stringify({ ...localConfig, defaultBackend: "headless", headless: { mtnPath: failingMtn } }));
+    const result = await run(process.execPath, [fileURLToPath(cli), "open", "--config", config])
+      .then(({ stdout }) => ({ status: 0, output: JSON.parse(stdout) }))
+      .catch((error) => ({ status: error.code, output: JSON.parse(error.stdout) }));
+    assert.equal(result.status, 2);
+    assert.equal(result.output.error, "mtn_failed");
+  });
 });
 
 test("Claude SessionEnd keeps the host event name", async () => {
@@ -181,6 +217,19 @@ test("open and create execute against the TaskNotes API", async () => {
     assert.equal(created.task.path, "06-tarefas/Nova.md");
     assert.deepEqual(calls.find((call) => call.method === "POST").body.projects, ["[[CRM]]"]);
     assert.deepEqual(calls.find((call) => call.method === "PUT").body, { Responsavel: ["[[Arthur_Cardoso]]"], Marca: ["[[Madame_Labs]]"] });
+  });
+});
+
+test("headless create refuses missing project before changing the vault", async () => {
+  await fixture(async ({ config, calls }) => {
+    const result = await run(process.execPath, [
+      fileURLToPath(cli), "create", "Nova", "--responsavel", "arthur", "--marca", "Madame_Labs", "--backend", "headless", "--config", config,
+    ])
+      .then(({ stdout }) => ({ status: 0, output: JSON.parse(stdout) }))
+      .catch((error) => ({ status: error.code, output: JSON.parse(error.stdout) }));
+    assert.equal(result.status, 2);
+    assert.equal(result.output.error, "missing_create_metadata");
+    assert.equal(calls.some((call) => call.method === "POST"), false);
   });
 });
 

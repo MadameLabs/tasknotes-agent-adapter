@@ -22,8 +22,8 @@ const STATUSES = ["to-do", "em-andamento", "aprovacao", "pausa", "concluido", "c
 const BACKENDS = ["desktop", "headless"];
 const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
 
-// Desktop e o padrao porque so ele cria tarefa com Responsavel, Marca e Projeto.
-// Headless existe para sessao sem Obsidian aberto e nunca e escolhido sozinho.
+// Desktop e o padrao; ambos os backends criam e promovem tarefa com metadados.
+// Headless pode ser escolhido explicitamente ou como default configurado.
 function backendFor(config, name) {
   if (!BACKENDS.includes(name)) throw new Error("invalid_backend");
   return name === "headless"
@@ -31,15 +31,12 @@ function backendFor(config, name) {
     : createTaskNotesApiBackend(config.desktop);
 }
 
-function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding, backend }) {
+function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding }) {
   const base = `node ${cli}`;
   if (binding) {
-    return `Gate TaskNotes satisfeito: sessão vinculada a ${binding.taskPath}. Use somente o adaptador Node deste hub. Ao encerrar: ${base} stop --agent ${agent} --session ${sessionId} --status STATUS --config ${configPath}. STATUS é obrigatório e descreve o que aconteceu de fato: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido (terminou e é verificável sozinho, ou o usuário já confirmou), cancelado (abandonado), pausa (SÓ para stand-by real, nunca como desfecho de trabalho terminado).`;
+    return `Gate TaskNotes satisfeito: sessão vinculada a ${binding.taskPath}. Use somente o adaptador Node deste hub. Ao encerrar uma entrega, o agente decide o status a partir do contexto; só pergunte à pessoa usuária diante de ambiguidade material. Ao encerrar: ${base} stop --agent ${agent} --session ${sessionId} --status STATUS --config ${configPath}. STATUS é obrigatório e descreve o que aconteceu de fato: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido (terminou e é verificável sozinho, ou o usuário já confirmou), cancelado (abandonado), pausa (SÓ para stand-by real, nunca como desfecho de trabalho terminado).`;
   }
-  if (backend === "headless") {
-    return `Gate TaskNotes obrigatório no madamelabs-code. Antes de trabalhar, execute ${base} open --backend headless --config ${configPath} e pergunte em qual tarefa atuar; o usuário pode dispensar tarefa e cronômetro explicitamente. Criação direta não é suportada no backend headless; para transformar uma nota existente em tarefa: ${base} promote "CAMINHO_EXATO" --responsavel ${defaultResponsavel} --marca Madame_Labs --projeto PROJETO --backend headless --config ${configPath}. Para iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --backend headless --config ${configPath}. Use somente este adaptador Node. Ao encerrar, ${base} stop exige --status: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido, cancelado ou pausa (só stand-by real).`;
-  }
-  return `Gate TaskNotes obrigatório no madamelabs-code. Antes de trabalhar, execute ${base} open --config ${configPath} e pergunte em qual tarefa atuar; o usuário pode dispensar tarefa e cronômetro explicitamente. Para criar: ${base} create "TÍTULO" --responsavel ${defaultResponsavel} --marca MARCA [--projeto PROJETO] --config ${configPath}. Para promover uma nota com execução: ${base} promote "CAMINHO_EXATO" --responsavel ${defaultResponsavel} --marca Madame_Labs --projeto PROJETO --backend headless --config ${configPath}. Para iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --config ${configPath}. Use somente este adaptador Node. Ao encerrar, ${base} stop exige --status: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido, cancelado ou pausa (só stand-by real).`;
+  return `Gate TaskNotes obrigatório no madamelabs-code. Antes de trabalhar, execute ${base} open --backend headless --config ${configPath} e pergunte em qual tarefa atuar; o usuário pode dispensar tarefa e cronômetro explicitamente. Para criar: ${base} create "TÍTULO" --responsavel ${defaultResponsavel} --marca MARCA --projeto PROJETO --backend headless --config ${configPath}. Para promover uma nota com execução: ${base} promote "CAMINHO_EXATO" --responsavel ${defaultResponsavel} --marca Madame_Labs --projeto PROJETO --backend headless --config ${configPath}. Para iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --backend headless --config ${configPath}. Use somente este adaptador Node. Ao encerrar uma entrega, o agente decide o status a partir do contexto; só pergunte à pessoa usuária diante de ambiguidade material. ${base} stop exige --status: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido, cancelado ou pausa (só stand-by real).`;
 }
 
 if (configIndex === -1 || !process.argv[configIndex + 1]) {
@@ -71,7 +68,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
         if (bound) await sessionEnd({ state, api: backendFor(config, bound.backend ?? backend), sessionKey: hook.sessionKey });
       }
       const binding = command === "hook-start" ? await getBinding(state, hook.sessionKey) : null;
-      const additionalContext = gateContext({ agent, configPath: process.argv[configIndex + 1], defaultResponsavel: config.defaultResponsavel, sessionId: hook.sessionId, binding, backend });
+      const additionalContext = gateContext({ agent, configPath: process.argv[configIndex + 1], defaultResponsavel: config.defaultResponsavel, sessionId: hook.sessionId, binding });
       // Codex exige hookEventName dentro de hookSpecificOutput no SessionStart.
       // Claude preserva seu evento para o wrapper e os testes de compatibilidade.
       output(command === "hook-start" && agent === "codex"
@@ -83,15 +80,16 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       output({ ok: true, tasks });
     } else if (command === "create") {
       const title = process.argv[3];
-      if (!title) throw new Error("missing_title");
       const responsavel = resolveResponsavel(option("--responsavel", config.defaultResponsavel));
-      if (!responsavel) throw new Error("invalid_responsavel");
+      const marca = option("--marca");
+      const projeto = option("--projeto");
+      if (!title || !responsavel || !marca || !projeto) throw new Error("missing_create_metadata");
       const api = backendFor(config, backend);
       const task = await api.createTask({
         title,
         responsavel,
-        marcas: options("--marca"),
-        projeto: option("--projeto"),
+        marcas: [marca],
+        projeto,
       });
       output({ ok: true, task });
     } else if (command === "promote") {

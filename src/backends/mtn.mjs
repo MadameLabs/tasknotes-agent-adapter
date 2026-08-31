@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 const closed = new Set(["concluido", "cancelado"]);
+const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
 
 // O mtn nao expoe timer nem tarefa em JSON: `list --json` e a unica saida
 // estruturada, e nela uma entrada de tempo sem endTime e um timer correndo.
@@ -53,11 +54,21 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       "--marca", marca,
       "--projeto", projeto,
     ]),
+    async createTask(input) {
+      const before = new Set((await listTasks()).map((task) => task.path));
+      await invoke(["create", input.title]);
+      const created = (await listTasks()).find((task) => !before.has(task.path) && task.title === input.title);
+      if (!created) throw new Error("created_task_not_found");
+      await invoke([
+        "promote", created.path,
+        "--responsavel", wikilink(input.responsavel),
+        "--marca", wikilink(input.marcas?.[0] ?? "Madame_Labs"),
+        "--projeto", wikilink(input.projeto),
+      ]);
+      return (await findTask(created.path)) ?? created;
+    },
     verifyTimer: async (path, identity) =>
       (await getActiveTimers()).some((item) => item.task.id === path && item.session.startTime === identity?.startTime),
-    // Criar tarefa exige Responsavel, Marca e Projeto, e o --set seguro recusa
-    // campo ausente do frontmatter: headless nao cria, so opera o que existe.
-    createTask: () => { throw new Error("unsafe_backend_missing"); },
     setProjects: () => { throw new Error("unsafe_backend_missing"); },
   };
 }
