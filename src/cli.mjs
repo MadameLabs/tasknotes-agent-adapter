@@ -33,10 +33,28 @@ function backendFor(config, name) {
 
 function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding }) {
   const base = `node ${cli}`;
+  // O gate nao e um lembrete de abertura: e a regra que a sessao reavalia a
+  // cada mensagem. Por isso os dois textos descrevem o mesmo ciclo -- detectar
+  // execucao, materializar o artefato duravel, promover, iniciar, concluir a
+  // fase e avancar -- e nao so o comando da vez.
   if (binding) {
-    return `Gate TaskNotes satisfeito: sessão vinculada a ${binding.taskPath}. Use somente o adaptador Node deste hub. Ao encerrar uma entrega, o agente decide o status a partir do contexto; só pergunte à pessoa usuária diante de ambiguidade material. Ao encerrar: ${base} stop --agent ${agent} --session ${sessionId} --status STATUS --config ${configPath}. STATUS é obrigatório e descreve o que aconteceu de fato: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido (terminou e é verificável sozinho, ou o usuário já confirmou), cancelado (abandonado), pausa (SÓ para stand-by real, nunca como desfecho de trabalho terminado).`;
+    return [
+      `Gate TaskNotes satisfeito: sessão vinculada a ${binding.taskPath}. Use somente o adaptador Node deste hub.`,
+      `Reclassifique a intenção a cada mensagem: quando o trabalho troca de artefato durável — o design terminou e começa o plano, o plano terminou e começa a implementação —, isso é uma nova fase. Encerre a fase terminada com ${base} stop --agent ${agent} --session ${sessionId} --status concluido --config ${configPath} e só então promova e inicie o próximo artefato; nunca deixe duas tarefas abertas representando a mesma feature.`,
+      `Ao encerrar uma entrega, o agente decide o status a partir do contexto; só pergunte à pessoa usuária diante de ambiguidade material: ${base} stop --agent ${agent} --session ${sessionId} --status STATUS --config ${configPath}. STATUS é obrigatório e descreve o que aconteceu de fato: aprovacao (terminou e precisa de conferência), concluido (terminou e é verificável sozinho, ou o usuário já confirmou), cancelado (abandonado), pausa (SÓ para stand-by real, nunca como desfecho de trabalho terminado).`,
+    ].join("\n\n");
   }
-  return `Gate TaskNotes obrigatório no madamelabs-code. Antes de trabalhar, execute ${base} open --backend headless --config ${configPath} e pergunte em qual tarefa atuar; o usuário pode dispensar tarefa e cronômetro explicitamente. Para criar: ${base} create "TÍTULO" --responsavel ${defaultResponsavel} --marca MARCA --projeto PROJETO --backend headless --config ${configPath}. Para promover uma nota com execução: ${base} promote "CAMINHO_EXATO" --responsavel ${defaultResponsavel} --marca Madame_Labs --projeto PROJETO --backend headless --config ${configPath}. Para iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --backend headless --config ${configPath}. Use somente este adaptador Node. Ao encerrar uma entrega, o agente decide o status a partir do contexto; só pergunte à pessoa usuária diante de ambiguidade material. ${base} stop exige --status: aprovacao (terminou e precisa de conferência — o desfecho normal), concluido, cancelado ou pausa (só stand-by real).`;
+  return [
+    `Gate TaskNotes obrigatório no madamelabs-code. Esta sessão não tem tarefa vinculada.`,
+    `Reclassifique a intenção a cada mensagem: o pedido em curso tem execução? Se tem, existe um artefato durável — briefing, design, especificação, plano ou tarefa direta — que a represente? O ciclo é detectar a intenção de execução, materializar o artefato durável, promover a nota a tarefa, iniciar o cronômetro, concluir a fase e avançar para o artefato seguinte.`,
+    `Plan Mode e update_plan são camada efêmera da sessão: não criam tarefa por si sós e não substituem o artefato durável.`,
+    `Fase terminada é encerrada com --status concluido antes de a seguinte ser rastreada, para não haver duas tarefas simultâneas representando a mesma feature.`,
+    `Listar: ${base} open --backend headless --config ${configPath}`,
+    `Criar: ${base} create "TÍTULO" --responsavel ${defaultResponsavel} --marca MARCA --projeto PROJETO --backend headless --config ${configPath}`,
+    `Promover uma nota com execução: ${base} promote "CAMINHO_EXATO" --responsavel ${defaultResponsavel} --marca Madame_Labs --projeto PROJETO --backend headless --config ${configPath}`,
+    `Iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --backend headless --config ${configPath}`,
+    `A pessoa usuária pode dispensar tarefa e cronômetro explicitamente; nunca escolher ou criar silenciosamente. Use somente este adaptador Node. Ao encerrar uma entrega, o agente decide o status a partir do contexto; só pergunte diante de ambiguidade material. ${base} stop exige --status: aprovacao (terminou e precisa de conferência), concluido (verificável sozinho, ou já confirmado), cancelado (abandonado) ou pausa (só stand-by real).`,
+  ].join("\n\n");
 }
 
 if (configIndex === -1 || !process.argv[configIndex + 1]) {

@@ -91,11 +91,13 @@ test("SessionStart injects an actionable Node-only task gate", async () => {
 test("SessionStart tells a bound session how to advance to the next artifact", async () => {
   await fixture(async ({ config, dir }) => {
     const env = { ...process.env, LOCALAPPDATA: dir };
-    const started = spawnSync(process.execPath, [
+    // spawnSync trava a event loop deste processo, que e quem hospeda o
+    // servidor do fixture: o `start` do filho ficaria esperando uma conexao
+    // que ninguem aceita. Comando que fala com a API vai por execFile async.
+    await run(process.execPath, [
       fileURLToPath(cli), "start", "06-tarefas/CRM.md",
       "--agent", "codex", "--session", "bound", "--config", config,
-    ], { encoding: "utf8", env });
-    assert.equal(started.status, 0, started.stdout + started.stderr);
+    ], { env });
 
     const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-start", "--agent", "codex", "--config", config], {
       encoding: "utf8",
