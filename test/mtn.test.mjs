@@ -41,10 +41,12 @@ test("promotes one exact note with the approved TaskNotes metadata", async () =>
     });
     process.env.OUT = before;
     assert.deepEqual(JSON.parse(await (await import("node:fs/promises")).readFile(output, "utf8")), [
-      "promote", "01-planejamento/Brainstorm.md",
-      "--responsavel", "[[Arthur_Cardoso]]",
-      "--marca", "[[Madame_Labs]]",
-      "--projeto", "[[tasknotes-dual-vault-e-adaptador]]",
+      "update", "01-planejamento/Brainstorm.md",
+      "--add-tag", "task",
+      "--status", "to-do",
+      "--set-new-list", "Responsavel=[[Arthur_Cardoso]]",
+      "--set-new-list", "Marca=[[Madame_Labs]]",
+      "--set-new-list", "Projeto=[[tasknotes-dual-vault-e-adaptador]]",
       "--path", "C:/vault",
     ]);
   } finally { await rm(dir, { recursive: true, force: true }); }
@@ -105,5 +107,24 @@ test("creates a headless task with the vault TaskNotes type", async () => {
 
     const note = await readFile(join(vault, task.path), "utf8");
     assert.match(note, /Status: to-do/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("mtn_failed carries the reason the CLI printed", async () => {
+  // Antes o adaptador reduzia tudo a "mtn_failed:1": a linha que dizia
+  // unknown_field era descartada junto com o resto da saida.
+  const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-reason-"));
+  const script = join(dir, "fake.mjs");
+  await writeFile(script, `console.log('[31m✗ unknown_field:Responsavel[39m'); process.exit(1);`);
+  try {
+    const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault" });
+    await assert.rejects(
+      () => backend.setStatus("06-tarefas/Alvo.md", "pausa"),
+      (error) => {
+        assert.match(error.message, /^mtn_failed:/);
+        assert.match(error.message, /unknown_field:Responsavel/);
+        return true;
+      },
+    );
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

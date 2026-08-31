@@ -168,8 +168,18 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       output({ ok: true, command, responsavel: config.defaultResponsavel });
     }
   } catch (error) {
-    const code = String(error?.message ?? "operation_failed").split(":", 1)[0];
-    output({ ok: false, error: code, message: "TaskNotes operation failed without changing another session" });
+    // O codigo continua sendo o primeiro segmento, mas o resto da mensagem e a
+    // unica pista do que precisa ser corrigido: trocar tudo por uma frase fixa
+    // fazia "File not found" e "unknown_field" desaparecerem no caminho.
+    const raw = String(error?.message ?? "operation_failed");
+    const separator = raw.indexOf(":");
+    const code = separator > 0 ? raw.slice(0, separator) : raw;
+    const detail = separator > 0 ? raw.slice(separator + 1).trim() : "";
+    output({
+      ok: false,
+      error: code,
+      message: detail || "TaskNotes operation failed without changing another session",
+    });
     process.exitCode = 2;
   }
 }

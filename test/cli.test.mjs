@@ -77,7 +77,37 @@ test("SessionStart injects an actionable Node-only task gate", async () => {
     assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs promote/);
     assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs start .*--backend headless/);
     assert.match(output.hookSpecificOutput.additionalContext, /dispensar/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /a cada mensagem/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /artefato durável/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /detectar.*materializar.*promover.*iniciar.*concluir.*avançar/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /Plan Mode.*não.*tarefa|não.*tarefa.*Plan Mode/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /fase terminada.*concluido/i);
+    assert.doesNotMatch(output.hookSpecificOutput.additionalContext, /Antes de trabalhar.*pergunte em qual tarefa atuar/i);
+    assert.doesNotMatch(output.hookSpecificOutput.additionalContext, /aprova[cç][aã]o.*desfecho normal/i);
     assert.doesNotMatch(output.hookSpecificOutput.additionalContext, /timer_cli|bridge\.timer_cli/);
+  });
+});
+
+test("SessionStart tells a bound session how to advance to the next artifact", async () => {
+  await fixture(async ({ config, dir }) => {
+    const env = { ...process.env, LOCALAPPDATA: dir };
+    const started = spawnSync(process.execPath, [
+      fileURLToPath(cli), "start", "06-tarefas/CRM.md",
+      "--agent", "codex", "--session", "bound", "--config", config,
+    ], { encoding: "utf8", env });
+    assert.equal(started.status, 0, started.stdout + started.stderr);
+
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-start", "--agent", "codex", "--config", config], {
+      encoding: "utf8",
+      env,
+      input: JSON.stringify({ session_id: "bound", cwd: "C:/madamelabs-code" }),
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const context = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
+    assert.match(context, /sessão vinculada/i);
+    assert.match(context, /nova fase/i);
+    assert.match(context, /stop .*--status concluido/i);
+    assert.match(context, /próximo artefato/i);
   });
 });
 
@@ -497,4 +527,30 @@ test("reset is not a real command and must not answer ok", async () => {
     assert.equal(result.status, 2);
     assert.equal(JSON.parse(result.stdout).error, "unknown_command");
   });
+});
+
+test("a backend failure reports the reason instead of a fixed sentence", async () => {
+  // O catch final cortava tudo depois do primeiro ":" e trocava a causa por
+  // uma frase generica, entao "File not found" nunca chegava a quem chamou.
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-reason-"));
+  try {
+    const fake = join(dir, "fake-mtn.mjs");
+    await writeFile(fake, `console.log('\u001b[31m✗ Failed to read task: File not found: alvo.md\u001b[39m'); process.exit(1);`);
+    const configPath = join(dir, "config.json");
+    await writeFile(configPath, JSON.stringify({
+      workspace: "teste", vault: "V", vaultPath: dir, defaultResponsavel: "Arthur_Cardoso",
+      desktop: { baseUrl: "http://127.0.0.1:1", authToken: "x" },
+      headless: { mtnPath: fake },
+    }));
+
+    const result = spawnSync(process.execPath, [
+      fileURLToPath(cli), "set-status", "alvo.md", "--status", "pausa",
+      "--backend", "headless", "--config", configPath,
+    ], { encoding: "utf8" });
+
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.error, "mtn_failed");
+    assert.match(payload.message, /File not found: alvo\.md/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
