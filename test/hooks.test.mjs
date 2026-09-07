@@ -16,6 +16,13 @@ test("normalizes Codex payloads", () => {
   assert.equal(parseHookPayload("codex", "Stop", { session_id: "abc" }).sessionKey, "codex:abc");
 });
 
+test("normalizes opencode payloads", () => {
+  const hook = parseHookPayload("opencode", "SessionStart", { session_id: "abc", cwd: "C:/madamelabs-code" });
+  assert.equal(hook.sessionKey, "opencode:abc");
+  assert.equal(hook.event, "SessionStart");
+  assert.equal(hook.cwd, "C:/madamelabs-code");
+});
+
 test("rejects a missing or blank session id", () => {
   assert.throws(() => parseHookPayload("codex", "Stop", {}), /missing_session_id/);
   assert.throws(() => parseHookPayload("claude", "Stop", { session_id: " " }), /missing_session_id/);

@@ -76,7 +76,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
     } else if (command === "hook-start" || command === "hook-end") {
       const agent = option("--agent");
       const input = await new Promise((resolve) => { let raw = ""; process.stdin.on("data", (chunk) => raw += chunk); process.stdin.on("end", () => resolve(raw ? JSON.parse(raw.replace(/^\uFEFF/, "")) : {})); });
-      const event = command === "hook-start" ? "SessionStart" : agent === "claude" ? "SessionEnd" : "Stop";
+      const event = command === "hook-start" ? "SessionStart" : agent === "claude" || agent === "opencode" ? "SessionEnd" : "Stop";
       const hook = parseHookPayload(agent, event, input);
       const state = await openState(config.stateDir);
       if (command === "hook-end") {

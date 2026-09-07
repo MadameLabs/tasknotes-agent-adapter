@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFile, spawnSync } from "node:child_process";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import { mkdir, readFile, symlink, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -13,6 +13,19 @@ const cli = new URL("../src/cli.mjs", import.meta.url);
 const sessionStartWrapper = fileURLToPath(new URL("../../scripts/tasknotes-session-start.ps1", import.meta.url));
 const codexHooks = fileURLToPath(new URL("../../.codex/hooks.json", import.meta.url));
 const run = promisify(execFile);
+
+function runWithInput(command, args, options, input) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { ...options, stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stdout, stderr }));
+    child.stdin.end(input);
+  });
+}
 
 async function fixture(callback) {
   const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-cli-"));
@@ -220,6 +233,40 @@ test("Claude SessionEnd keeps the host event name", async () => {
     });
     assert.equal(result.status, 0);
     assert.equal(JSON.parse(result.stdout).hookSpecificOutput.hookEventName, "SessionEnd");
+  });
+});
+
+test("opencode SessionStart injects the Node-only task gate", async () => {
+  await fixture(async ({ config, dir }) => {
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-start", "--agent", "opencode", "--config", config], {
+      encoding: "utf8",
+      env: { ...process.env, LOCALAPPDATA: dir },
+      input: JSON.stringify({ session_id: "op1", cwd: "C:/madamelabs-code" }),
+    });
+    assert.equal(result.status, 0);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.ok, true);
+    assert.equal(output.hookSpecificOutput.hookEventName, "SessionStart");
+    assert.match(output.hookSpecificOutput.additionalContext, /gate TaskNotes/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /opencode/);
+  });
+});
+
+test("opencode SessionEnd stops a bound timer through the bound backend", async () => {
+  await fixture(async ({ config, dir, calls, timers }) => {
+    const env = { ...process.env, LOCALAPPDATA: dir };
+    await run(process.execPath, [fileURLToPath(cli), "start", "01-planejamento/plano.md",
+      "--agent", "opencode", "--session", "op1", "--config", config], { env });
+
+    const result = await runWithInput(process.execPath, [
+      fileURLToPath(cli), "hook-end", "--agent", "opencode", "--config", config,
+    ], { env }, JSON.stringify({ session_id: "op1", cwd: "C:/madamelabs-code" }));
+    assert.equal(result.code, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.ok, true);
+    assert.equal(output.hookSpecificOutput.hookEventName, "SessionEnd");
+    assert.equal(calls.some((call) => call.url.endsWith("/time/stop")), true);
+    assert.deepEqual(timers, []);
   });
 });
 
