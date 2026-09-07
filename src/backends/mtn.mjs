@@ -3,7 +3,6 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 const closed = new Set(["concluido", "cancelado"]);
-const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
 
 // O mtn nao expoe timer nem tarefa em JSON: `list --json` e a unica saida
 // estruturada, e nela uma entrada de tempo sem endTime e um timer correndo.
@@ -54,30 +53,20 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       return { taskPath: path, startTime };
     },
     stopTimer: (path) => invoke(["timer", "stop", path]),
-    // `update` aceita os campos de lista e preserva o `type` original da nota.
+    // O mtn ganhou `promote` nativo; antes disso o adaptador compunha o mesmo
+    // efeito com `update`, mas por `--set-new-list`, opcao que o CLI nunca
+    // expos -- toda promocao headless morria em `unknown option`. O comando
+    // nativo grava a tag `task`, o status inicial e as tres listas de uma vez,
+    // e e ele quem sabe escrever lista sem derrubar a leitura da colecao.
     promoteTask: (path, { responsavel, marca, projeto }) => invoke([
-      "update", path,
-      "--add-tag", "task",
-      "--set-new-list", `Responsavel=${wikilink(responsavel)}`,
-      "--set-new-list", `Marca=${wikilink(marca)}`,
-      "--set-new-list", `Projeto=${wikilink(projeto)}`,
+      "promote", path,
+      "--responsavel", responsavel,
+      "--marca", marca,
+      "--projeto", projeto,
     ]),
-    async createTask(input) {
-      const before = new Set((await listTasks()).map((task) => task.path));
-      await invoke(["create", input.title]);
-      const created = (await listTasks()).find((task) => !before.has(task.path) && task.title === input.title);
-      if (!created) throw new Error("created_task_not_found");
-      await invoke([
-        "update", created.path,
-        "--add-tag", "task",
-        "--set-new-list", `Responsavel=${wikilink(input.responsavel)}`,
-        "--set-new-list", `Marca=${wikilink(input.marcas?.[0] ?? "Madame_Labs")}`,
-        "--set-new-list", `Projeto=${wikilink(input.projeto)}`,
-      ]);
-      return (await findTask(created.path)) ?? created;
-    },
     verifyTimer: async (path, identity) =>
       (await getActiveTimers()).some((item) => item.task.id === path && item.session.startTime === identity?.startTime),
+    createTask: () => { throw new Error("unsafe_backend_missing"); },
     setProjects: () => { throw new Error("unsafe_backend_missing"); },
   };
 }
