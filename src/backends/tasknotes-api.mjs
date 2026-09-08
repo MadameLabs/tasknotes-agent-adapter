@@ -34,10 +34,22 @@ export function createTaskNotesApiBackend({ baseUrl, authToken }) {
         if (input.responsavel) patch.Responsavel = [wikilink(input.responsavel)];
         if (input.marcas?.length) patch.Marca = input.marcas.map(wikilink);
         await request(taskUrl(path), { method: "PUT", body: JSON.stringify(patch) });
+        // O POST responde antes do PUT, e nesse retrato Responsavel ainda
+        // carrega o defaultValue do user field do plugin. Devolver o retrato
+        // fazia o CLI anunciar "Responsavel: Madame_Labs" numa tarefa cujo
+        // disco dizia Arthur_Cardoso -- parecia marca e responsavel trocados.
+        // Se a releitura falhar, o retrato antigo ainda e melhor que erro:
+        // a tarefa ja existe no disco, e so o retorno fica pobre.
+        const settled = await request(taskUrl(path)).catch(() => null);
+        if (settled) return { ...settled, path };
       }
       return { ...created, path };
     },
-    promoteTask: () => { throw new Error("unsupported_backend"); },
+    // A API do plugin so enxerga nota que ja e tarefa -- /api/tasks/<path>
+    // responde 404 antes da tag `task` existir no arquivo --, entao promover
+    // por aqui e impossivel por desenho, nao por falta de implementacao. Quem
+    // promove e o headless, e o CLI ja o escolhe sozinho no comando promote.
+    promoteTask: () => { throw new Error("promotion_requires_file_write"); },
     getTask: (path) => request(taskUrl(path)),
     setProjects: (path, projects) => request(taskUrl(path), { method: "PUT", body: JSON.stringify({ projects: projects.map(wikilink) }) }),
     getActiveTimers,

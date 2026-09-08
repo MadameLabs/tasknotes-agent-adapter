@@ -51,7 +51,7 @@ function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding
     `Fase terminada é encerrada com --status concluido antes de a seguinte ser rastreada, para não haver duas tarefas simultâneas representando a mesma feature.`,
     `Listar: ${base} open --backend headless --config ${configPath}`,
     `Criar: ${base} create "TÍTULO" --responsavel ${defaultResponsavel} --marca MARCA --projeto PROJETO --backend headless --config ${configPath}`,
-    `Promover uma nota com execução: ${base} promote "CAMINHO_EXATO" --responsavel ${defaultResponsavel} --marca Madame_Labs --projeto PROJETO --backend headless --config ${configPath}`,
+    `Promover uma nota com execução: ${base} promote "CAMINHO_EXATO" --responsavel ${defaultResponsavel} --marca Madame_Labs --projeto PROJETO --config ${configPath}`,
     `Iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --backend headless --config ${configPath}`,
     `A pessoa usuária pode dispensar tarefa e cronômetro explicitamente; nunca escolher ou criar silenciosamente. Use somente este adaptador Node. Ao encerrar uma entrega, o agente decide o status a partir do contexto; só pergunte diante de ambiguidade material. ${base} stop exige --status: aprovacao (terminou e precisa de conferência), concluido (verificável sozinho, ou já confirmado), cancelado (abandonado) ou pausa (só stand-by real).`,
   ].join("\n\n");
@@ -116,7 +116,13 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       const marca = option("--marca");
       const projeto = option("--projeto");
       if (!taskPath || !responsavel || !marca || !projeto) throw new Error("missing_promotion_metadata");
-      const api = backendFor(config, backend);
+      // Promover e escrita de frontmatter num arquivo que ainda nao e tarefa, e
+      // a API do plugin nao alcanca esse arquivo: GET e PUT /api/tasks/<path>
+      // respondem 404 "Task not found" enquanto a tag `task` nao esta la, e nao
+      // existe endpoint de arquivo. Por isso o promote usa sempre o headless,
+      // mesmo com o Obsidian aberto -- antes disso, o backend padrao devolvia
+      // `unsupported_backend` e a promocao so funcionava com --backend headless.
+      const api = backendFor(config, "headless");
       await api.promoteTask(taskPath, {
         responsavel: wikilink(responsavel),
         marca: wikilink(marca),

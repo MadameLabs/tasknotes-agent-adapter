@@ -312,7 +312,10 @@ test("headless create refuses missing project before changing the vault", async 
   });
 });
 
-test("promote turns an existing planning note into a headless task", async () => {
+// Sem --backend: o promote precisa funcionar no caminho padrao, que e o
+// desktop. A API do plugin nao alcanca nota que ainda nao e tarefa, entao o
+// comando escolhe o headless sozinho; exigir a flag era o defeito.
+test("promote turns an existing planning note into a task without asking for a backend", async () => {
   const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-promote-"));
   const vault = join(dir, "vault");
   const config = join(dir, "config.json");
@@ -332,14 +335,14 @@ test("promote turns an existing planning note into a headless task", async () =>
 
     const promoted = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "promote", "01-planejamento/Brainstorm.md",
       "--responsavel", "arthur", "--marca", "Madame_Labs", "--projeto", "tasknotes-dual-vault-e-adaptador",
-      "--backend", "headless", "--config", config])).stdout);
+      "--config", config])).stdout);
 
     assert.deepEqual(promoted, { ok: true, result: { taskPath: "01-planejamento/Brainstorm.md" } });
     const note = await (await import("node:fs/promises")).readFile(join(vault, "01-planejamento", "Brainstorm.md"), "utf8");
     assert.match(note, /- task/);
-    assert.match(note, /Responsavel:/);
-    assert.match(note, /Marca:/);
-    assert.match(note, /Projeto:/);
+    assert.match(note, /Responsavel:\s+- '?\[\[Arthur_Cardoso\]\]/);
+    assert.match(note, /Marca:\s+- '?\[\[Madame_Labs\]\]/);
+    assert.match(note, /Projeto:\s+- '?\[\[tasknotes-dual-vault-e-adaptador\]\]/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

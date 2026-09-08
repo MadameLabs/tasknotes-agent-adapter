@@ -53,16 +53,21 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       return { taskPath: path, startTime };
     },
     stopTimer: (path) => invoke(["timer", "stop", path]),
-    // O mtn ganhou `promote` nativo; antes disso o adaptador compunha o mesmo
-    // efeito com `update`, mas por `--set-new-list`, opcao que o CLI nunca
-    // expos -- toda promocao headless morria em `unknown option`. O comando
-    // nativo grava a tag `task`, o status inicial e as tres listas de uma vez,
-    // e e ele quem sabe escrever lista sem derrubar a leitura da colecao.
+    // O mtn nao tem um comando `promote`: promover e compor as primitivas que
+    // ele tem. Quem marca a nota como tarefa e a tag `task`, igual ao
+    // TaskNotes -- nenhum campo de tipo e escrito, e o `type` original da nota
+    // fica intacto. Responsavel, Marca e Projeto vao por --set-new-list porque
+    // sao listas no vault: gravadas como string, derrubam a leitura da
+    // colecao inteira. Ja se tentou trocar isso por `mtn promote`, que nao
+    // existe -- o sintoma foi `mtn_failed:unknown command 'promote'`, e a
+    // pista falsa foi um dist/ desatualizado, que nao tinha --set-new-list.
     promoteTask: (path, { responsavel, marca, projeto }) => invoke([
-      "promote", path,
-      "--responsavel", responsavel,
-      "--marca", marca,
-      "--projeto", projeto,
+      "update", path,
+      "--add-tag", "task",
+      "--status", "to-do",
+      "--set-new-list", `Responsavel=${responsavel}`,
+      "--set-new-list", `Marca=${marca}`,
+      "--set-new-list", `Projeto=${projeto}`,
     ]),
     verifyTimer: async (path, identity) =>
       (await getActiveTimers()).some((item) => item.task.id === path && item.session.startTime === identity?.startTime),
