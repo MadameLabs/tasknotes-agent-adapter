@@ -86,10 +86,10 @@ test("SessionStart injects an actionable Node-only task gate", async () => {
     const output = JSON.parse(result.stdout);
     assert.equal(output.hookSpecificOutput.hookEventName, "SessionStart");
     assert.match(output.hookSpecificOutput.additionalContext, /gate TaskNotes/i);
-    assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs open --backend headless/);
-    assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs create .*--marca MARCA --projeto PROJETO --backend headless/);
-    assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs promote/);
-    assert.match(output.hookSpecificOutput.additionalContext, /cli\.mjs start .*--backend headless/);
+    assert.match(output.hookSpecificOutput.additionalContext, /tasknotes-agent open --backend headless/);
+    assert.match(output.hookSpecificOutput.additionalContext, /tasknotes-agent create .*--marca MARCA --projeto PROJETO --backend headless/);
+    assert.match(output.hookSpecificOutput.additionalContext, /tasknotes-agent promote/);
+    assert.match(output.hookSpecificOutput.additionalContext, /tasknotes-agent start .*--backend headless/);
     assert.match(output.hookSpecificOutput.additionalContext, /dispensar/i);
     assert.match(output.hookSpecificOutput.additionalContext, /a cada mensagem/i);
     assert.match(output.hookSpecificOutput.additionalContext, /artefato durável/i);

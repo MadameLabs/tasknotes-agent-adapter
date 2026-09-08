@@ -6,7 +6,6 @@ import { sessionEnd } from "./domain.mjs";
 import { recoverOrphanTimer, recoverWork, startWork, stopWork } from "./domain.mjs";
 import { createTaskNotesApiBackend } from "./backends/tasknotes-api.mjs";
 import { createMtnBackend } from "./backends/mtn.mjs";
-import { fileURLToPath } from "node:url";
 
 const [command] = process.argv.slice(2);
 const configIndex = process.argv.indexOf("--config");
@@ -16,7 +15,6 @@ const option = (name, fallback = undefined) => {
   return index === -1 ? fallback : process.argv[index + 1];
 };
 const options = (name) => process.argv.flatMap((value, index) => value === name ? [process.argv[index + 1]] : []);
-const cli = fileURLToPath(import.meta.url);
 const requestedBackend = option("--backend");
 const STATUSES = ["to-do", "em-andamento", "aprovacao", "pausa", "concluido", "cancelado"];
 const BACKENDS = ["desktop", "headless"];
@@ -32,7 +30,11 @@ function backendFor(config, name) {
 }
 
 function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding, workspace }) {
-  const base = `node ${cli}`;
+  // O gate imprime o comando que a pessoa (ou o agente) deve digitar, e desde
+  // que o adaptador virou pacote instalado esse comando e o `bin`, nao o
+  // caminho do arquivo. Imprimir `node <caminho do modulo global>` mandava
+  // decorar um caminho que muda a cada reinstalacao.
+  const base = "tasknotes-agent";
   // O gate nao e um lembrete de abertura: e a regra que a sessao reavalia a
   // cada mensagem. Por isso os dois textos descrevem o mesmo ciclo -- detectar
   // execucao, materializar o artefato duravel, promover, iniciar, concluir a
