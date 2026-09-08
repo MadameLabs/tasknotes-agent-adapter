@@ -29,7 +29,14 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
     }
   }
   // O CLI pode emitir BOM quando o console do Windows esta em UTF-8.
-  const listTasks = async () => JSON.parse((await invoke(["list", "--json"])).replace(/^﻿/, ""));
+  //
+  // O --limit e obrigatorio: `mtn list` devolve 50 por padrao, e essa lista nao
+  // alimenta so o `open` -- e por ela que findTask, getActiveTimers e
+  // verifyTimer enxergam o vault. Sem limite, a tarefa numero 51 fica invisivel
+  // ao adaptador: o cronometro dela nao e verificado, `stop` nao para nada e
+  // `start` morre em timer_not_verified. Os dois vaults ja passavam de 50
+  // quando isso foi descoberto.
+  const listTasks = async () => JSON.parse((await invoke(["list", "--json", "--limit", "100000"])).replace(/^﻿/, ""));
   const findTask = async (path) => (await listTasks()).find((task) => task.path === path) ?? null;
 
   async function getActiveTimers() {
