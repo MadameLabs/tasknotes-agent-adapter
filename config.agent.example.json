@@ -1,0 +1,17 @@
+{
+  "workspace": "madamelabs-code",
+  "vault": "ENGENHARIA",
+  "vaultPath": "/CAMINHO/ABSOLUTO/madamelabs-code/ENGENHARIA",
+  "defaultResponsavel": "arthur",
+  "defaultBackend": "desktop",
+  "desktop": {
+    "baseUrl": "http://127.0.0.1:8081",
+    "authToken": "SUBSTITUIR_LOCALMENTE"
+  },
+  "headless": {},
+  "_comentarios": {
+    "desktop": "Backend padrao. authToken e o apiAuthToken do plugin TaskNotes; aceita $TASKNOTES_AUTH_TOKEN para ler da variavel de ambiente.",
+    "headless": "Opcional. O mtn vem como dependencia fixada deste pacote e e resolvido por modulo, entao mtnPath nao e mais obrigatorio. Preencher apenas para apontar um clone em desenvolvimento; o valor do arquivo vence sobre o mtn empacotado. Headless nao cria nota nova; use promote, que usa esse backend sempre, inclusive com o Obsidian aberto.",
+    "stateDir": "Opcional. Sem ele o estado vai para %LOCALAPPDATA%\\MadameLabs\\TaskNotesAgent no Windows ou ~/.local/state/madamelabs-tasknotes no Linux. Preencher so em teste ou vault temporario, para nao escrever no estado real da maquina."
+  }
+}

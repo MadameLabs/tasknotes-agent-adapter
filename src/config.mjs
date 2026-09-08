@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { bundledMtnPath } from "./mtn-path.mjs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -49,12 +50,19 @@ export async function loadConfig(path) {
     if (!process.env.TASKNOTES_AUTH_TOKEN) throw new Error("missing_tasknotes_auth_token");
     config.desktop.authToken = process.env.TASKNOTES_AUTH_TOKEN;
   }
-  if (!config.headless || typeof config.headless !== "object") throw new Error("missing_headless");
-  requiredString(config.headless, "mtnPath");
+  // headless e mtnPath deixaram de ser obrigatorios: o mtn vem como dependencia
+  // do pacote e e resolvido por modulo. O campo continua valendo e vence quando
+  // presente, para apontar um clone em desenvolvimento sem reinstalar nada.
+  if (config.headless !== undefined && (typeof config.headless !== "object" || config.headless === null)) {
+    throw new Error("invalid_headless");
+  }
+  const headless = { ...config.headless };
+  if (headless.mtnPath === undefined) headless.mtnPath = bundledMtnPath();
+  else requiredString(headless, "mtnPath");
   // stateDir explicito e o que isola teste e vault temporario do estado real da
   // maquina; sem ele a suite gravava leases de mentira no estado de producao.
   const stateDir = typeof config.stateDir === "string" && config.stateDir.trim()
     ? config.stateDir
     : defaultStateDir();
-  return { ...config, stateDir };
+  return { ...config, headless, stateDir };
 }

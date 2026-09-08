@@ -8,10 +8,11 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { mtn } from "./mtn-path.mjs";
+import { workspaceFile } from "./workspace.mjs";
 
 const cli = new URL("../src/cli.mjs", import.meta.url);
-const sessionStartWrapper = fileURLToPath(new URL("../../scripts/tasknotes-session-start.ps1", import.meta.url));
-const codexHooks = fileURLToPath(new URL("../../.codex/hooks.json", import.meta.url));
+const sessionStartWrapper = workspaceFile("scripts/tasknotes-session-start.ps1");
+const codexHooks = workspaceFile(".codex/hooks.json");
 const run = promisify(execFile);
 
 function runWithInput(command, args, options, input) {
@@ -180,7 +181,7 @@ test("headless SessionStart mantém os comandos explicitamente headless", async 
   });
 });
 
-test("Codex SessionStart hook runs from a new workspace path", { skip: process.platform === "win32" }, async () => {
+test("Codex SessionStart hook runs from a new workspace path", { skip: process.platform === "win32" || !codexHooks }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-portable-hook-"));
   try {
     await mkdir(join(dir, "bin"));
@@ -270,7 +271,7 @@ test("opencode SessionEnd stops a bound timer through the bound backend", async 
   });
 });
 
-test("Claude wrapper forwards the raw hook payload to the Node adapter", { skip: process.platform !== "win32" }, async () => {
+test("Claude wrapper forwards the raw hook payload to the Node adapter", { skip: process.platform !== "win32" || !sessionStartWrapper }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-wrapper-"));
   try {
     const result = spawnSync("powershell.exe", ["-NoProfile", "-File", sessionStartWrapper], {

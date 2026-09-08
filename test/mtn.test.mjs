@@ -4,12 +4,10 @@ import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createMtnBackend } from "../src/backends/mtn.mjs";
 import { mtn } from "./mtn-path.mjs";
 
-const taskType = fileURLToPath(new URL("../../ENGENHARIA/_types/task.md", import.meta.url));
 const run = promisify(execFile);
 
 test("passes an exact path as an execFile argument", async () => {
