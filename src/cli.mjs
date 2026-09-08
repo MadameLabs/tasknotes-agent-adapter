@@ -31,7 +31,7 @@ function backendFor(config, name) {
     : createTaskNotesApiBackend(config.desktop);
 }
 
-function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding }) {
+function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding, workspace }) {
   const base = `node ${cli}`;
   // O gate nao e um lembrete de abertura: e a regra que a sessao reavalia a
   // cada mensagem. Por isso os dois textos descrevem o mesmo ciclo -- detectar
@@ -45,7 +45,7 @@ function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding
     ].join("\n\n");
   }
   return [
-    `Gate TaskNotes obrigatório no madamelabs-code. Esta sessão não tem tarefa vinculada.`,
+    `Gate TaskNotes obrigatório no ${workspace}. Esta sessão não tem tarefa vinculada.`,
     `Reclassifique a intenção a cada mensagem: o pedido em curso tem execução? Se tem, existe um artefato durável — briefing, design, especificação, plano ou tarefa direta — que a represente? O ciclo é detectar a intenção de execução, materializar o artefato durável, promover a nota a tarefa, iniciar o cronômetro, concluir a fase e avançar para o artefato seguinte.`,
     `Plan Mode e update_plan são camada efêmera da sessão: não criam tarefa por si sós e não substituem o artefato durável.`,
     `Fase terminada é encerrada com --status concluido antes de a seguinte ser rastreada, para não haver duas tarefas simultâneas representando a mesma feature.`,
@@ -86,7 +86,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
         if (bound) await sessionEnd({ state, api: backendFor(config, bound.backend ?? backend), sessionKey: hook.sessionKey });
       }
       const binding = command === "hook-start" ? await getBinding(state, hook.sessionKey) : null;
-      const additionalContext = gateContext({ agent, configPath: process.argv[configIndex + 1], defaultResponsavel: config.defaultResponsavel, sessionId: hook.sessionId, binding });
+      const additionalContext = gateContext({ agent, configPath: process.argv[configIndex + 1], defaultResponsavel: config.defaultResponsavel, sessionId: hook.sessionId, binding, workspace: config.workspace });
       // Codex exige hookEventName dentro de hookSpecificOutput no SessionStart.
       // Claude preserva seu evento para o wrapper e os testes de compatibilidade.
       output(command === "hook-start" && agent === "codex"

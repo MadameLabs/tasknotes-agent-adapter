@@ -181,6 +181,31 @@ test("headless SessionStart mantém os comandos explicitamente headless", async 
   });
 });
 
+// O gate nomeia o workspace da sessao. Ele ja esteve escrito no codigo como
+// "madamelabs-code", e a segunda vault -- a OFICINA -- passou a receber um
+// gate que nomeava o hub errado.
+test("the gate names the workspace from the config, not a hardcoded one", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-workspace-"));
+  try {
+    const config = join(dir, "config.json");
+    await writeFile(config, JSON.stringify({
+      workspace: "OFICINA_Madame-Labs",
+      vault: "BIBLIOTECA",
+      vaultPath: dir,
+      defaultResponsavel: "arthur",
+      desktop: { baseUrl: "http://127.0.0.1:1", authToken: "token" },
+      stateDir: join(dir, "state"),
+    }));
+    const { stdout } = await runWithInput(process.execPath, [fileURLToPath(cli), "hook-start", "--agent", "claude", "--config", config], {},
+      JSON.stringify({ session_id: "workspace", cwd: dir }));
+    const context = JSON.parse(stdout).hookSpecificOutput.additionalContext;
+    assert.match(context, /Gate TaskNotes obrigatório no OFICINA_Madame-Labs\./);
+    assert.doesNotMatch(context, /obrigatório no madamelabs-code/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Codex SessionStart hook runs from a new workspace path", { skip: process.platform === "win32" || !codexHooks }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-portable-hook-"));
   try {
