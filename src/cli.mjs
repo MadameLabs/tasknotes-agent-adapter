@@ -16,7 +16,7 @@ const option = (name, fallback = undefined) => {
 };
 const options = (name) => process.argv.flatMap((value, index) => value === name ? [process.argv[index + 1]] : []);
 const requestedBackend = option("--backend");
-const STATUSES = ["to-do", "em-andamento", "aprovacao", "pausa", "concluido", "cancelado"];
+const STATUSES = ["backlog", "to-do", "em-andamento", "aprovacao", "pausa", "concluido", "cancelado"];
 const BACKENDS = ["desktop", "headless"];
 const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
 

@@ -8,7 +8,7 @@ Este repositório nasceu de `madamelabs-code/agent-adapter` por `git subtree spl
 
 ## Regras que não se negociam
 
-- **`stop` exige `--status`.** Um desfecho padrão mentiria sobre o que aconteceu com a tarefa. Os seis status são `to-do`, `em-andamento`, `aprovacao`, `pausa`, `concluido` e `cancelado`.
+- **`stop` exige `--status`.** Um desfecho padrão mentiria sobre o que aconteceu com a tarefa. Os sete status são `backlog`, `to-do`, `em-andamento`, `aprovacao`, `pausa`, `concluido` e `cancelado`. O `backlog` foi declarado em 2026-09-08 para dar realidade ao par de workflows `promover-backlog-ao-agendar` e `retornar-to-do-ao-backlog-ao-desagendar`, que operava sobre um status inexistente.
 - **Em caso de dúvida ou indisponibilidade, o cronômetro fica vivo.** Parar o timer errado é falha mais grave do que deixar timer pendente.
 - **Toda operação destrutiva é endereçada pelo caminho exato da tarefa.** Nunca existe fallback para "o primeiro timer ativo".
 - **`recover` exige o dono esperado.** Liberar lease é explícito e nunca automático.
