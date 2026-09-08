@@ -53,21 +53,19 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       return { taskPath: path, startTime };
     },
     stopTimer: (path) => invoke(["timer", "stop", path]),
-    // O mtn nao tem um comando `promote`: promover e compor as primitivas que
-    // ele tem. Quem marca a nota como tarefa e a tag `task`, igual ao
-    // TaskNotes -- nenhum campo de tipo e escrito, e o `type` original da nota
-    // fica intacto. Responsavel, Marca e Projeto vao por --set-new-list porque
-    // sao listas no vault: gravadas como string, derrubam a leitura da
-    // colecao inteira. Ja se tentou trocar isso por `mtn promote`, que nao
-    // existe -- o sintoma foi `mtn_failed:unknown command 'promote'`, e a
-    // pista falsa foi um dist/ desatualizado, que nao tinha --set-new-list.
+    // O mtn tem `promote` (fork MadameLabs, commit 5fdabaf): ele grava a tag
+    // `task`, o status inicial e as tres listas de uma vez, e e ele quem sabe
+    // escrever lista sem derrubar a leitura da colecao. Ja se tentou trocar
+    // isso por uma composicao de `update --set-new-list`, por causa de um
+    // clone parado numa branch anterior ao comando: o sintoma foi
+    // `mtn_failed:unknown command 'promote'`, que quer dizer clone velho, nao
+    // comando inexistente. Conferir com `git log --oneline fork/main` antes de
+    // concluir que o mtn nao tem o que o adaptador chama.
     promoteTask: (path, { responsavel, marca, projeto }) => invoke([
-      "update", path,
-      "--add-tag", "task",
-      "--status", "to-do",
-      "--set-new-list", `Responsavel=${responsavel}`,
-      "--set-new-list", `Marca=${marca}`,
-      "--set-new-list", `Projeto=${projeto}`,
+      "promote", path,
+      "--responsavel", responsavel,
+      "--marca", marca,
+      "--projeto", projeto,
     ]),
     verifyTimer: async (path, identity) =>
       (await getActiveTimers()).some((item) => item.task.id === path && item.session.startTime === identity?.startTime),
