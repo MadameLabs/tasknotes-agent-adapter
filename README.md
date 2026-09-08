@@ -13,7 +13,7 @@ Ele não reimplementa o TaskNotes. Faz só o que é específico de agente: o gat
 | Sabe criar tarefa do zero | sim | não |
 | Sabe promover nota que ainda não é tarefa | não | sim |
 
-O padrão é `desktop`; `--backend headless` escolhe o outro, e `defaultBackend` no config muda o padrão. Duas exceções são automáticas: `promote` usa sempre o headless, porque a API do plugin responde 404 para nota que ainda não tem a tag `task`; e `stop` usa o backend gravado no vínculo pelo `start`, porque parar por um caminho diferente do que iniciou não conseguiria verificar a identidade do cronômetro.
+O padrão é `desktop`; `--backend headless` escolhe o outro, e `defaultBackend` no config muda o padrão. Duas exceções são automáticas: `promote` usa sempre o headless, porque a API do plugin responde 404 para nota que ainda não tem a tag `task`; e `stop` começa pelo backend gravado no vínculo pelo `start`, porque é dele a identidade do cronômetro. Quando esse backend não responde — Obsidian fechado —, o encerramento cai para o headless, que lê o mesmo arquivo do vault e verifica a mesma identidade. Se nenhum dos dois responder, o `hook-end` registra o cronômetro em `divergences`, solta vínculo e lease e sai com 0; o `stop` explícito falha alto, porque nele o status é um pedido que não foi atendido.
 
 O `mtn` vem como dependência deste pacote, fixado por SHA. Não é preciso instalá-lo à parte nem apontar caminho para ele.
 

@@ -29,6 +29,16 @@ function backendFor(config, name) {
     : createTaskNotesApiBackend(config.desktop);
 }
 
+// Encerrar nao e a mesma coisa que comecar: quem para o cronometro nao escolhe
+// se o Obsidian esta aberto. O backend do vinculo continua na frente, porque e
+// dele a identidade do timer, mas o headless entra atras como plano B -- ele le
+// o mesmo arquivo do vault e verifica a mesma identidade.
+function backendCandidates(config, primary) {
+  return [primary, "headless"]
+    .filter((name, index, all) => all.indexOf(name) === index)
+    .map((name) => ({ backend: name, api: backendFor(config, name) }));
+}
+
 function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding, workspace }) {
   // O gate imprime o comando que a pessoa (ou o agente) deve digitar, e desde
   // que o adaptador virou pacote instalado esse comando e o `bin`, nao o
@@ -82,18 +92,23 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       const hook = parseHookPayload(agent, event, input);
       const state = await openState(config.stateDir);
       if (command === "hook-end") {
-        // O backend vem do vinculo: parar por um caminho diferente do que
-        // iniciou nao consegue verificar a identidade do timer.
         const bound = await getBinding(state, hook.sessionKey);
-        if (bound) await sessionEnd({ state, api: backendFor(config, bound.backend ?? backend), sessionKey: hook.sessionKey });
+        const result = bound
+          ? await sessionEnd({ state, apis: backendCandidates(config, bound.backend ?? backend), sessionKey: hook.sessionKey })
+          : { ok: true, stopped: false };
+        // SessionEnd nao instrui ninguem: nao ha mais sessao para ler o gate. O
+        // texto so vinha junto por o hook-end compartilhar caminho de codigo
+        // com o hook-start.
+        output({ ok: true, hookSpecificOutput: { hookEventName: hook.event }, result });
+      } else {
+        const binding = await getBinding(state, hook.sessionKey);
+        const additionalContext = gateContext({ agent, configPath: process.argv[configIndex + 1], defaultResponsavel: config.defaultResponsavel, sessionId: hook.sessionId, binding, workspace: config.workspace });
+        // Codex exige hookEventName dentro de hookSpecificOutput no SessionStart.
+        // Claude preserva seu evento para o wrapper e os testes de compatibilidade.
+        output(agent === "codex"
+          ? { hookSpecificOutput: { hookEventName: hook.event, additionalContext } }
+          : { ok: true, hookSpecificOutput: { hookEventName: hook.event, additionalContext } });
       }
-      const binding = command === "hook-start" ? await getBinding(state, hook.sessionKey) : null;
-      const additionalContext = gateContext({ agent, configPath: process.argv[configIndex + 1], defaultResponsavel: config.defaultResponsavel, sessionId: hook.sessionId, binding, workspace: config.workspace });
-      // Codex exige hookEventName dentro de hookSpecificOutput no SessionStart.
-      // Claude preserva seu evento para o wrapper e os testes de compatibilidade.
-      output(command === "hook-start" && agent === "codex"
-        ? { hookSpecificOutput: { hookEventName: hook.event, additionalContext } }
-        : { ok: true, hookSpecificOutput: { hookEventName: hook.event, additionalContext } });
     } else if (command === "open") {
       const api = backendFor(config, backend);
       const tasks = (await api.listOpen()).map((task) => ({ ...task, path: task.path ?? task.id }));
@@ -158,10 +173,9 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       const state = await openState(config.stateDir);
       const sessionKey = `${agent}:${sessionId}`;
       const bound = command === "stop" ? await getBinding(state, sessionKey) : null;
-      const api = backendFor(config, bound?.backend ?? backend);
       const result = command === "start"
-        ? await startWork({ state, api, sessionKey, vault: config.vault, taskPath, backend })
-        : await stopWork({ state, api, sessionKey, status });
+        ? await startWork({ state, api: backendFor(config, backend), sessionKey, vault: config.vault, taskPath, backend })
+        : await stopWork({ state, apis: backendCandidates(config, bound?.backend ?? backend), sessionKey, status });
       output({ ok: true, result });
     } else if (command === "recover") {
       // Recuperacao explicita: libera vinculo e lease de uma sessao morta sem

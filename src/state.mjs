@@ -96,11 +96,21 @@ export async function recoverLease(state, taskKey, expectedSessionKey) {
   });
 }
 
+// Divergencia e o que o adaptador sabe que nao conseguiu fazer: cronometro que
+// ficou aberto porque nenhum backend respondeu, ou que pertence a outra
+// identidade. O campo existia desde o inicio e nunca era escrito -- entao o
+// encerramento com o Obsidian fechado nao deixava rastro nenhum.
+export async function recordDivergence(state, divergence) {
+  return withLock(state, (data) => {
+    data.divergences = [...(data.divergences ?? []), divergence];
+  });
+}
+
 export async function diagnoseState(state) {
   const data = await readState(state.path);
   return {
     bindings: Object.values(data.bindings),
     leases: Object.entries(data.leases).map(([taskKey, sessionKey]) => ({ taskKey, sessionKey })),
-    divergences: data.divergences,
+    divergences: data.divergences ?? [],
   };
 }

@@ -19,7 +19,8 @@ Este repositório nasceu de `madamelabs-code/agent-adapter` por `git subtree spl
 `desktop` fala com a API do plugin TaskNotes; `headless` executa o `mtn`. Duas escolhas são automáticas e não obedecem a `--backend`:
 
 - `promote` usa sempre o headless. A API do plugin responde 404 para nota que ainda não tem a tag `task`, e não existe endpoint de arquivo — promover é escrita de frontmatter num arquivo que ainda não é tarefa.
-- `stop` usa o backend gravado no vínculo pelo `start`. Parar por caminho diferente do que iniciou não conseguiria verificar a identidade do cronômetro.
+- `stop` e `hook-end` começam pelo backend gravado no vínculo pelo `start` e caem para o headless quando ele não responde. A identidade do cronômetro é o `startTime` lido do vault, e o `mtn` lê o mesmo arquivo que a API do plugin: verificar por outro backend não afrouxa nada.
+- **Encerrar sessão não falha por indisponibilidade.** Obsidian fechado é condição esperada. Quando nenhum backend responde, o `hook-end` registra o cronômetro em `divergences`, solta vínculo e lease e sai com 0 — segurar a tarefa em nome de uma sessão morta era pior que o barulho. O `stop` explícito continua falhando alto, porque nele o status é um pedido que não foi atendido.
 
 O `mtn` é dependência deste pacote, fixada por SHA, e resolvido por módulo em `src/mtn-path.mjs`. `headless.mtnPath` no config continua valendo e vence quando presente, para apontar um clone em desenvolvimento.
 

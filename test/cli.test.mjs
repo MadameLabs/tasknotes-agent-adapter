@@ -28,6 +28,16 @@ function runWithInput(command, args, options, input) {
   });
 }
 
+// Uma porta que ninguem escuta: o servidor sobe so para reservar o numero e cai
+// antes de o teste usa-lo, que e como se parece o Obsidian fechado.
+async function closedPort() {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, resolve));
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
+
 async function fixture(callback) {
   const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-cli-"));
   const calls = [];
@@ -250,7 +260,7 @@ test("uses config defaultBackend when the command omits --backend", async () => 
   });
 });
 
-test("Claude SessionEnd keeps the host event name", async () => {
+test("Claude SessionEnd keeps the host event name and stops injecting the gate", async () => {
   await fixture(async ({ config, dir }) => {
     const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-end", "--agent", "claude", "--config", config], {
       encoding: "utf8",
@@ -258,7 +268,48 @@ test("Claude SessionEnd keeps the host event name", async () => {
       input: JSON.stringify({ session_id: "abc", cwd: "C:/madamelabs-code" }),
     });
     assert.equal(result.status, 0);
-    assert.equal(JSON.parse(result.stdout).hookSpecificOutput.hookEventName, "SessionEnd");
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.hookSpecificOutput.hookEventName, "SessionEnd");
+    // Nao ha mais sessao para instruir: o gate no SessionEnd era heranca de
+    // compartilhar caminho de codigo com o hook-start.
+    assert.equal(output.hookSpecificOutput.additionalContext, undefined);
+  });
+});
+
+// O defeito de 2026-09-08: sessao vinculada e Obsidian fechado faziam o hook
+// sair com 2, e vinculo e lease ficavam para tras segurando a tarefa.
+test("Claude SessionEnd survives every backend being unreachable", async () => {
+  await fixture(async ({ config, dir }) => {
+    const env = { ...process.env, LOCALAPPDATA: dir };
+    await run(process.execPath, [fileURLToPath(cli), "start", "01-planejamento/plano.md",
+      "--agent", "claude", "--session", "morta", "--config", config], { env });
+
+    const live = JSON.parse(await readFile(config, "utf8"));
+    const failingMtn = join(dir, "failing-mtn.mjs");
+    await writeFile(failingMtn, "process.exit(17);");
+    await writeFile(config, JSON.stringify({
+      ...live,
+      desktop: { ...live.desktop, baseUrl: `http://127.0.0.1:${await closedPort()}` },
+      headless: { mtnPath: failingMtn },
+    }));
+
+    const result = await runWithInput(process.execPath, [
+      fileURLToPath(cli), "hook-end", "--agent", "claude", "--config", config,
+    ], { env }, JSON.stringify({ session_id: "morta", cwd: "C:/madamelabs-code" }));
+
+    assert.equal(result.code, 0, result.stdout + result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.ok, true);
+    assert.equal(output.result.stopped, false);
+    assert.equal(output.result.reason, "no_backend_answered");
+
+    await writeFile(config, JSON.stringify(live));
+    const state = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "diagnose", "--config", config], { env })).stdout).result;
+    assert.deepEqual(state.bindings, []);
+    assert.deepEqual(state.leases, []);
+    assert.equal(state.divergences.length, 1);
+    assert.equal(state.divergences[0].taskPath, "01-planejamento/plano.md");
+    assert.equal(state.divergences[0].reason, "no_backend_answered");
   });
 });
 
