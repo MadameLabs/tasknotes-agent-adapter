@@ -11,7 +11,7 @@ import { mtn } from "./mtn-path.mjs";
 import { workspaceFile } from "./workspace.mjs";
 
 const cli = new URL("../src/cli.mjs", import.meta.url);
-const sessionStartWrapper = workspaceFile("scripts/tasknotes-session-start.ps1");
+const sessionStartWrapper = workspaceFile("scripts/tasknotes-session-start.sh");
 const codexHooks = workspaceFile(".codex/hooks.json");
 const run = promisify(execFile);
 
@@ -216,6 +216,19 @@ test("the gate names the workspace from the config, not a hardcoded one", async 
   }
 });
 
+// O teste abaixo roda so fora do Windows e so o primeiro hook do grupo, e foi
+// por essa fresta que a barra invertida do activate-ponytail sobreviveu. Este
+// aqui roda em todo lugar e olha todos: sh come a barra invertida, entao um
+// comando de hooks.json que a contenha chega ao shell destrocado.
+test("no Codex hook command carries a backslash for sh to eat", { skip: !codexHooks }, async () => {
+  const hooks = JSON.parse(await readFile(codexHooks, "utf8"));
+  for (const grupo of Object.values(hooks.hooks).flat()) {
+    for (const { command } of grupo.hooks) {
+      assert.ok(!command.includes("\\"), `barra invertida sobrevive ao sh em: ${command}`);
+    }
+  }
+});
+
 test("Codex SessionStart hook runs from a new workspace path", { skip: process.platform === "win32" || !codexHooks }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-portable-hook-"));
   try {
@@ -347,10 +360,13 @@ test("opencode SessionEnd stops a bound timer through the bound backend", async 
   });
 });
 
-test("Claude wrapper forwards the raw hook payload to the Node adapter", { skip: process.platform !== "win32" || !sessionStartWrapper }, async () => {
+// Por sh, e nao por powershell: o harness executa todo hook por sh, no Windows
+// tambem. Era o .ps1 que este teste exercitava, e nenhum harness o chamava --
+// o wrapper de verdade ficava sem cobertura.
+test("Claude wrapper forwards the raw hook payload to the Node adapter", { skip: !sessionStartWrapper }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-wrapper-"));
   try {
-    const result = spawnSync("powershell.exe", ["-NoProfile", "-File", sessionStartWrapper], {
+    const result = spawnSync("sh", ["-c", '"$0"', sessionStartWrapper], {
       encoding: "utf8",
       env: { ...process.env, LOCALAPPDATA: dir, TASKNOTES_AGENT: "claude" },
       input: JSON.stringify({ session_id: "wrapper-smoke", cwd: "C:/madamelabs-code" }),
