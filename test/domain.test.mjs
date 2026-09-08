@@ -19,8 +19,8 @@ function fakeBackend({ name, active, calls }) {
     async setStatus(path, status) {
       guard();
       record(["status", path, status]);
-      // "Auto-start time tracking" do TaskNotes: e a propria mudanca de status
-      // que dispara o cronometro, sem ninguem pedir.
+      // O workflow `auto-start-time-tracking` do TaskNotes Workflows: e a
+      // propria mudanca de status que abre o cronometro, sem ninguem pedir.
       if (backend.autoStart && status === "em-andamento" && !active.has(path)) active.set(path, { taskPath: path, startTime: "auto" });
     },
     async startTimer(path) {
@@ -310,11 +310,11 @@ test("explicit stop keeps binding and lease when no backend answers", async () =
   });
 });
 
-// O `start` disputava com o proprio efeito colateral: `setStatus` disparava o
-// auto-start do plugin e o `startTimer` seguinte morria com "Timer already
-// running". O vinculo era desfeito e o cronometro ficava correndo sem dono --
-// aconteceu duas vezes ao abrir a sessao de 2026-09-08.
-test("adopts the timer the plugin auto-started from its own status change", async () => {
+// O `start` disputava com o proprio efeito colateral: `setStatus` acionava o
+// workflow `auto-start-time-tracking` e o `startTimer` seguinte morria com
+// "Timer already running". O vinculo era desfeito e o cronometro ficava
+// correndo sem dono -- aconteceu duas vezes ao abrir a sessao de 2026-09-08.
+test("adopts the timer the auto-start workflow opened from its own status change", async () => {
   await fixture(async ({ state, api, desktop, active, calls }) => {
     desktop.autoStart = true;
 

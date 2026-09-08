@@ -11,8 +11,10 @@ export async function startWork({ state, api, sessionKey, vault, taskPath, backe
   try {
     if ((await api.getActiveTimers()).some((item) => (item.task?.id ?? item.task?.path) === taskPath)) throw new Error("unowned_active_timer");
     await api.setStatus(taskPath, "em-andamento");
-    // O TaskNotes pode ter "Auto-start time tracking" ligado, e ai e a propria
-    // mudanca de status que dispara o cronometro. O `startTimer` seguinte morria
+    // O vault pode ter o workflow `auto-start-time-tracking` do TaskNotes
+    // Workflows ligado -- workflow, nao opcao do plugin: nao ha configuracao
+    // para procurar, ha um arquivo em 06-tarefas/Workflows/ --, e ai e a
+    // propria mudanca de status que dispara o cronometro. O `startTimer` morria
     // com "Timer already running", o vinculo era desfeito e o timer ficava
     // correndo sem dono. Nao havia cronometro nenhum antes do setStatus -- isso
     // acabou de ser verificado --, entao o que aparece agora e efeito do nosso
