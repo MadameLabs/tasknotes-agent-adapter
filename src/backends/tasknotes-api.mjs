@@ -1,4 +1,8 @@
 const closed = new Set(["concluido", "cancelado"]);
+// Tarefa nasce em `backlog`: trabalho aceito, ainda nao priorizado. O `to-do`
+// e uma decisao de priorizacao, e quem a toma e a pessoa, nao o adaptador.
+// O mesmo valor esta em mtn.mjs, para os dois backends nascerem igual.
+const INITIAL_STATUS = "backlog";
 const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
 
 export function createTaskNotesApiBackend({ baseUrl, authToken }) {
@@ -25,7 +29,7 @@ export function createTaskNotesApiBackend({ baseUrl, authToken }) {
       }
     },
     createTask: async (input) => {
-      const body = { title: input.title, status: input.status ?? "to-do" };
+      const body = { title: input.title, status: input.status ?? INITIAL_STATUS };
       if (input.projeto) body.projects = [wikilink(input.projeto)];
       const created = await request("/api/tasks", { method: "POST", body: JSON.stringify(body) });
       const path = created.id ?? created.path;

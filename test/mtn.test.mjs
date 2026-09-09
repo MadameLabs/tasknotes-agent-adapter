@@ -49,7 +49,9 @@ test("promotes one exact note with the approved TaskNotes metadata", async () =>
   const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-promote-"));
   const output = join(dir, "args.json");
   const script = join(dir, "fake.mjs");
-  await writeFile(script, `import { writeFileSync } from 'node:fs'; writeFileSync(process.env.OUT, JSON.stringify(process.argv.slice(2)));`);
+  // O promote chama o mtn duas vezes -- promote e depois o status inicial --,
+  // entao o falso registra uma linha por invocacao em vez de sobrescrever.
+  await writeFile(script, `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.OUT, JSON.stringify(process.argv.slice(2)) + '\\n');`);
   try {
     const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault" });
     const before = process.env.OUT; process.env.OUT = output;
@@ -59,13 +61,16 @@ test("promotes one exact note with the approved TaskNotes metadata", async () =>
       projeto: "[[tasknotes-dual-vault-e-adaptador]]",
     });
     process.env.OUT = before;
-    assert.deepEqual(JSON.parse(await (await import("node:fs/promises")).readFile(output, "utf8")), [
+    const calls = (await (await import("node:fs/promises")).readFile(output, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    assert.deepEqual(calls[0], [
       "promote", "01-planejamento/Brainstorm.md",
       "--responsavel", "[[Arthur_Cardoso]]",
       "--marca", "[[Madame_Labs]]",
       "--projeto", "[[tasknotes-dual-vault-e-adaptador]]",
       "--path", "C:/vault",
     ]);
+    // Nasce em backlog: o mtn grava `to-do` fixo no promote e o adaptador corrige.
+    assert.deepEqual(calls[1], ["update", "01-planejamento/Brainstorm.md", "--status", "backlog", "--path", "C:/vault"]);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

@@ -3,6 +3,9 @@ import { promisify } from "node:util";
 
 const run = promisify(execFile);
 const closed = new Set(["concluido", "cancelado"]);
+// Tarefa nasce em `backlog`: trabalho aceito, ainda nao priorizado. O mesmo
+// valor esta em tasknotes-api.mjs, para os dois backends nascerem igual.
+const INITIAL_STATUS = "backlog";
 
 // O mtn nao expoe timer nem tarefa em JSON: `list --json` e a unica saida
 // estruturada, e nela uma entrada de tempo sem endTime e um timer correndo.
@@ -68,12 +71,19 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
     // `mtn_failed:unknown command 'promote'`, que quer dizer clone velho, nao
     // comando inexistente. Conferir com `git log --oneline fork/main` antes de
     // concluir que o mtn nao tem o que o adaptador chama.
-    promoteTask: (path, { responsavel, marca, projeto }) => invoke([
-      "promote", path,
-      "--responsavel", responsavel,
-      "--marca", marca,
-      "--projeto", projeto,
-    ]),
+    // O `mtn promote` grava `to-do` fixo e nao aceita `--status`, entao o
+    // status inicial e corrigido logo depois -- e o adaptador, nao a versao do
+    // mtn instalada, que decide onde a tarefa nasce.
+    promoteTask: async (path, { responsavel, marca, projeto }) => {
+      const promoted = await invoke([
+        "promote", path,
+        "--responsavel", responsavel,
+        "--marca", marca,
+        "--projeto", projeto,
+      ]);
+      await invoke(["update", path, "--status", INITIAL_STATUS]);
+      return promoted;
+    },
     verifyTimer: async (path, identity) =>
       (await getActiveTimers()).some((item) => item.task.id === path && item.session.startTime === identity?.startTime),
     createTask: () => { throw new Error("unsafe_backend_missing"); },
