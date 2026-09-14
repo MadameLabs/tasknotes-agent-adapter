@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { loadConfig } from "../src/config.mjs";
+import { loadConfig, resolveResponsavel } from "../src/config.mjs";
 
 const validConfig = {
   workspace: "madamelabs-code",
@@ -53,6 +53,11 @@ test("accepts the canonical note name as default responsavel", async () => {
   await withConfig({ ...validConfig, defaultResponsavel: "Arthur_Cardoso" }, async (path) =>
     assert.equal((await loadConfig(path)).defaultResponsavel, "Arthur_Cardoso"),
   );
+});
+
+test("accepts the Miss. Labs aliases", async () => {
+  assert.equal(resolveResponsavel("misslabs"), "Miss. Labs");
+  assert.equal(resolveResponsavel("[[Miss. Labs]]"), "Miss. Labs");
 });
 
 test("rejects an unsupported default responsavel", async () => {

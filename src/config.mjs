@@ -9,6 +9,7 @@ const RESPONSAVEIS = new Map([
   ["arthur", "Arthur_Cardoso"],
   ["mayara", "Madame_Carmen"],
   ["labs", "Madame_Labs"],
+  ["misslabs", "Miss. Labs"],
 ]);
 
 export function resolveResponsavel(value) {
