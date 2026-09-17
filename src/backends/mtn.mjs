@@ -40,10 +40,28 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
   // `start` morre em timer_not_verified. Os dois vaults ja passavam de 50
   // quando isso foi descoberto.
   const listTasks = async () => JSON.parse((await invoke(["list", "--json", "--limit", "100000"])).replace(/^﻿/, ""));
-  const findTask = async (path) => (await listTasks()).find((task) => task.path === path) ?? null;
+  // Sem filtro, o `mtn list` esconde `concluido` e `cancelado`. Para abrir a
+  // lista de trabalho isso e o certo; para achar tarefa e cronometro, nao: o
+  // `stop` grava o status antes de parar o cronometro, e a tarefa sumia da
+  // janela bem no meio -- o adaptador respondia `timer_already_closed` e a
+  // entrada de tempo ficava aberta. Um `--where` explicito desliga esse filtro
+  // padrao (e o de arquivadas) e mantem so o filtro de "e tarefa".
+  const listAllTasks = async () => JSON.parse((await invoke(["list", "--json", "--limit", "100000", "--where", "true"])).replace(/^﻿/, ""));
+  const findTask = async (path) => (await listAllTasks()).find((task) => task.path === path) ?? null;
+
+  async function promote(path, { responsavel, marca, projeto }) {
+    const promoted = await invoke([
+      "promote", path,
+      "--responsavel", responsavel,
+      "--marca", marca,
+      "--projeto", projeto,
+    ]);
+    await invoke(["update", path, "--status", INITIAL_STATUS]);
+    return promoted;
+  }
 
   async function getActiveTimers() {
-    return (await listTasks()).flatMap((task) => {
+    return (await listAllTasks()).flatMap((task) => {
       const entry = openEntry(task);
       return entry ? [{ task: { id: task.path }, session: { startTime: entry.startTime } }] : [];
     });
@@ -74,19 +92,22 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
     // O `mtn promote` grava `to-do` fixo e nao aceita `--status`, entao o
     // status inicial e corrigido logo depois -- e o adaptador, nao a versao do
     // mtn instalada, que decide onde a tarefa nasce.
-    promoteTask: async (path, { responsavel, marca, projeto }) => {
-      const promoted = await invoke([
-        "promote", path,
-        "--responsavel", responsavel,
-        "--marca", marca,
-        "--projeto", projeto,
-      ]);
-      await invoke(["update", path, "--status", INITIAL_STATUS]);
-      return promoted;
+    promoteTask: promote,
+    // O `mtn create` so aceita texto livre e nao grava Responsavel, Marca nem
+    // Projeto: a nota nasce e passa pelo mesmo promote de uma nota existente.
+    // O caminho vem da linha "→ <caminho>" que o create imprime, porque o parser
+    // de linguagem natural do mtn pode tirar pedacos do titulo (datas, #tags).
+    async createTask({ title, responsavel, marcas, projeto }) {
+      const printed = (await invoke(["create", title])).replace(/\[[0-9;]*m/g, "");
+      const path = printed.split(/[\r\n]+/).map((line) => line.trim()).find((line) => line.startsWith("→"))?.replace(/^→\s*/, "");
+      if (!path) throw new Error("mtn_failed:create_path_not_printed");
+      await promote(path, { responsavel, marca: marcas[0], projeto });
+      const task = await findTask(path);
+      if (!task) throw new Error("task_not_verified");
+      return task;
     },
     verifyTimer: async (path, identity) =>
       (await getActiveTimers()).some((item) => item.task.id === path && item.session.startTime === identity?.startTime),
-    createTask: () => { throw new Error("unsafe_backend_missing"); },
     setProjects: () => { throw new Error("unsafe_backend_missing"); },
   };
 }

@@ -108,3 +108,53 @@ test("mtn_failed carries the reason the CLI printed", async () => {
     );
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+// Parar com `concluido` ou `cancelado` grava o status antes de parar o
+// cronometro. O `mtn list` sem filtro esconde exatamente esses dois status, entao
+// o cronometro sumia da janela do adaptador no meio do `stop`: a resposta era
+// `timer_already_closed` e a entrada de tempo ficava aberta para sempre.
+test("sees the running timer of a task already marked done", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-done-"));
+  const script = join(dir, "fake.mjs");
+  await writeFile(script, `
+    const args = process.argv.slice(2);
+    const done = [{ path: "06-tarefas/Alvo.md", status: "concluido", timeEntries: [{ startTime: "2026-09-16T10:00:00.000Z" }] }];
+    console.log(JSON.stringify(args.includes("--where") ? done : []));
+  `);
+  try {
+    const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault" });
+    assert.equal(await backend.verifyTimer("06-tarefas/Alvo.md", { startTime: "2026-09-16T10:00:00.000Z" }), true);
+    assert.equal((await backend.getTask("06-tarefas/Alvo.md"))?.status, "concluido");
+    // O `open` continua sendo so o que esta aberto.
+    assert.deepEqual(await backend.listOpen(), []);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("creates a task headless: mtn create, promote with metadata, initial status", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-create-"));
+  const output = join(dir, "calls.jsonl");
+  const script = join(dir, "fake.mjs");
+  await writeFile(script, `
+    import { appendFileSync } from 'node:fs';
+    const args = process.argv.slice(2);
+    appendFileSync(process.env.OUT, JSON.stringify(args) + '\\n');
+    if (args[0] === 'create') { console.log('✓ Task created'); console.log('  → 06-tarefas/Revisar hooks.md'); }
+    if (args[0] === 'list') console.log(JSON.stringify([{ path: '06-tarefas/Revisar hooks.md', status: 'backlog', title: 'Revisar hooks' }]));
+  `);
+  try {
+    const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault" });
+    const before = process.env.OUT; process.env.OUT = output;
+    const task = await backend.createTask({ title: "Revisar hooks", responsavel: "Arthur_Cardoso", marcas: ["Madame_Labs"], projeto: "tasknotes-dual-vault-e-adaptador" });
+    process.env.OUT = before;
+    const calls = (await readFile(output, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    assert.deepEqual(calls[0], ["create", "Revisar hooks", "--path", "C:/vault"]);
+    assert.deepEqual(calls[1], [
+      "promote", "06-tarefas/Revisar hooks.md",
+      "--responsavel", "Arthur_Cardoso", "--marca", "Madame_Labs", "--projeto", "tasknotes-dual-vault-e-adaptador",
+      "--path", "C:/vault",
+    ]);
+    assert.deepEqual(calls[2], ["update", "06-tarefas/Revisar hooks.md", "--status", "backlog", "--path", "C:/vault"]);
+    assert.equal(task.path, "06-tarefas/Revisar hooks.md");
+    assert.equal(task.status, "backlog");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
