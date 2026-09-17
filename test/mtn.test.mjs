@@ -150,7 +150,8 @@ test("creates a task headless: mtn create, promote with metadata, initial status
     assert.deepEqual(calls[0], ["create", "Revisar hooks", "--path", "C:/vault"]);
     assert.deepEqual(calls[1], [
       "promote", "06-tarefas/Revisar hooks.md",
-      "--responsavel", "Arthur_Cardoso", "--marca", "Madame_Labs", "--projeto", "tasknotes-dual-vault-e-adaptador",
+      // Wikilink como no backend desktop: sem colchetes o vault grava texto solto.
+      "--responsavel", "[[Arthur_Cardoso]]", "--marca", "[[Madame_Labs]]", "--projeto", "[[tasknotes-dual-vault-e-adaptador]]",
       "--path", "C:/vault",
     ]);
     assert.deepEqual(calls[2], ["update", "06-tarefas/Revisar hooks.md", "--status", "backlog", "--path", "C:/vault"]);

@@ -6,6 +6,7 @@ const closed = new Set(["concluido", "cancelado"]);
 // Tarefa nasce em `backlog`: trabalho aceito, ainda nao priorizado. O mesmo
 // valor esta em tasknotes-api.mjs, para os dois backends nascerem igual.
 const INITIAL_STATUS = "backlog";
+const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
 
 // O mtn nao expoe timer nem tarefa em JSON: `list --json` e a unica saida
 // estruturada, e nela uma entrada de tempo sem endTime e um timer correndo.
@@ -101,7 +102,7 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       const printed = (await invoke(["create", title])).replace(/\[[0-9;]*m/g, "");
       const path = printed.split(/[\r\n]+/).map((line) => line.trim()).find((line) => line.startsWith("→"))?.replace(/^→\s*/, "");
       if (!path) throw new Error("mtn_failed:create_path_not_printed");
-      await promote(path, { responsavel, marca: marcas[0], projeto });
+      await promote(path, { responsavel: wikilink(responsavel), marca: wikilink(marcas[0]), projeto: wikilink(projeto) });
       const task = await findTask(path);
       if (!task) throw new Error("task_not_verified");
       return task;
