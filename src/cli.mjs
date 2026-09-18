@@ -24,6 +24,7 @@ const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
 // Headless pode ser escolhido explicitamente ou como default configurado.
 function backendFor(config, name) {
   if (!BACKENDS.includes(name)) throw new Error("invalid_backend");
+  if (name === "desktop" && !config.desktop) throw new Error("missing_desktop");
   return name === "headless"
     ? createMtnBackend({ mtnPath: config.headless.mtnPath, vaultPath: config.vaultPath, mtnArgs: config.headless.mtnArgs ?? [] })
     : createTaskNotesApiBackend(config.desktop);
@@ -34,8 +35,11 @@ function backendFor(config, name) {
 // dele a identidade do timer, mas o headless entra atras como plano B -- ele le
 // o mesmo arquivo do vault e verifica a mesma identidade.
 function backendCandidates(config, primary) {
+  // Sem bloco desktop na config, encerrar vai direto ao headless em vez de
+  // falhar em missing_desktop.
   return [primary, "headless"]
     .filter((name, index, all) => all.indexOf(name) === index)
+    .filter((name) => name !== "desktop" || config.desktop)
     .map((name) => ({ backend: name, api: backendFor(config, name) }));
 }
 

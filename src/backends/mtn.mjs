@@ -109,6 +109,12 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
     },
     verifyTimer: async (path, identity) =>
       (await getActiveTimers()).some((item) => item.task.id === path && item.session.startTime === identity?.startTime),
-    setProjects: () => { throw new Error("unsafe_backend_missing"); },
+    // `--set-new-list` monta a lista do zero na primeira atribuicao e acumula
+    // nas seguintes: troca a lista inteira, como o PUT do backend desktop. O
+    // campo e `Projeto`, o nome no vault do campo canonico `projects`.
+    setProjects: (path, projetos) => invoke([
+      "update", path,
+      ...projetos.flatMap((projeto) => ["--set-new-list", `Projeto=${wikilink(projeto)}`]),
+    ]),
   };
 }

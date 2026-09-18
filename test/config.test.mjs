@@ -71,3 +71,19 @@ test("rejects an unsupported default backend", async () => {
     assert.rejects(loadConfig(path), /invalid_defaultBackend/),
   );
 });
+
+// Maquina sem Obsidian (o labs, no Fedora) nao tem API do plugin para apontar:
+// exigir desktop.authToken ali obrigava a inventar um token de mentira.
+test("headless default does not require a desktop block", async () => {
+  const { desktop, ...headlessOnly } = validConfig;
+  await withConfig({ ...headlessOnly, defaultBackend: "headless" }, async (path) =>
+    assert.equal((await loadConfig(path)).desktop, undefined),
+  );
+});
+
+test("desktop default still requires the desktop block", async () => {
+  const { desktop, ...headlessOnly } = validConfig;
+  await withConfig(headlessOnly, (path) => assert.rejects(loadConfig(path), /missing_desktop/));
+  await withConfig({ ...validConfig, defaultBackend: "headless", desktop: { baseUrl: "x" } }, (path) =>
+    assert.rejects(loadConfig(path), /missing_authToken/));
+});

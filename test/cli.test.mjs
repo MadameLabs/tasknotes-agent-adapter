@@ -699,3 +699,56 @@ test("a backend failure reports the reason instead of a fixed sentence", async (
     assert.match(payload.message, /File not found: alvo\.md/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+// Com o Obsidian fechado o link-project morria em unsafe_backend_missing. O
+// headless troca a lista Projeto inteira, como o PUT do desktop, e a tarefa
+// continua visivel ao mtn depois -- lista mal escrita derruba a leitura.
+test("link-project headless replaces the Projeto list on a real vault, with no desktop block", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-link-headless-"));
+  const vault = join(dir, "vault");
+  const config = join(dir, "config.json");
+  try {
+    assert.equal(spawnSync(process.execPath, [mtn, "init", vault], { encoding: "utf8" }).status, 0);
+    await mkdir(join(vault, "06-tarefas"), { recursive: true });
+    await writeFile(join(vault, "06-tarefas", "Alvo.md"), "---\ntitle: Alvo\n---\n");
+    await writeFile(config, JSON.stringify({
+      workspace: "madamelabs-code",
+      vault: "ENGENHARIA",
+      vaultPath: vault,
+      defaultResponsavel: "arthur",
+      defaultBackend: "headless",
+      headless: { mtnPath: mtn },
+      stateDir: join(dir, "state"),
+    }));
+    await run(process.execPath, [fileURLToPath(cli), "promote", "06-tarefas/Alvo.md",
+      "--responsavel", "arthur", "--marca", "Madame_Labs", "--projeto", "labs-sv", "--config", config]);
+
+    const linked = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "link-project", "06-tarefas/Alvo.md",
+      "--projeto", "labs", "--projeto", "[[outro-projeto]]", "--backend", "headless", "--config", config])).stdout);
+
+    assert.equal(linked.ok, true);
+    const note = await (await import("node:fs/promises")).readFile(join(vault, "06-tarefas", "Alvo.md"), "utf8");
+    assert.match(note, /Projeto:\s+- '?\[\[labs\]\]'?\s+- '?\[\[outro-projeto\]\]/);
+    assert.doesNotMatch(note, /labs-sv/);
+    const listed = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "open", "--config", config])).stdout);
+    assert.ok(listed.tasks.some((task) => task.path === "06-tarefas/Alvo.md"), JSON.stringify(listed));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("desktop backend fails clearly when the config has no desktop block", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-no-desktop-"));
+  const config = join(dir, "config.json");
+  try {
+    await writeFile(config, JSON.stringify({
+      workspace: "madamelabs-code", vault: "ENGENHARIA", vaultPath: join(dir, "vault"),
+      defaultResponsavel: "arthur", defaultBackend: "headless", stateDir: join(dir, "state"),
+    }));
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "open", "--backend", "desktop", "--config", config], { encoding: "utf8" });
+    assert.notEqual(result.status, 0);
+    assert.equal(JSON.parse(result.stdout).error, "missing_desktop");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

@@ -44,12 +44,17 @@ export async function loadConfig(path) {
   const defaultResponsavel = resolveResponsavel(config.defaultResponsavel);
   if (!defaultResponsavel) throw new Error("invalid_defaultResponsavel");
   config.defaultResponsavel = defaultResponsavel;
-  if (!config.desktop || typeof config.desktop !== "object") throw new Error("missing_desktop");
-  requiredString(config.desktop, "baseUrl");
-  requiredString(config.desktop, "authToken");
-  if (config.desktop.authToken === "$TASKNOTES_AUTH_TOKEN") {
-    if (!process.env.TASKNOTES_AUTH_TOKEN) throw new Error("missing_tasknotes_auth_token");
-    config.desktop.authToken = process.env.TASKNOTES_AUTH_TOKEN;
+  // Maquina sem Obsidian nao tem API do plugin: com default headless o bloco
+  // desktop e opcional, e pedir --backend desktop sem ele falha no cli com
+  // missing_desktop. Quando o bloco existe, continua validado por inteiro.
+  if (config.desktop !== undefined || config.defaultBackend !== "headless") {
+    if (!config.desktop || typeof config.desktop !== "object") throw new Error("missing_desktop");
+    requiredString(config.desktop, "baseUrl");
+    requiredString(config.desktop, "authToken");
+    if (config.desktop.authToken === "$TASKNOTES_AUTH_TOKEN") {
+      if (!process.env.TASKNOTES_AUTH_TOKEN) throw new Error("missing_tasknotes_auth_token");
+      config.desktop.authToken = process.env.TASKNOTES_AUTH_TOKEN;
+    }
   }
   // headless e mtnPath deixaram de ser obrigatorios: o mtn vem como dependencia
   // do pacote e e resolvido por modulo. O campo continua valendo e vence quando
