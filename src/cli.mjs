@@ -57,7 +57,7 @@ function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding
     return [
       `Gate TaskNotes satisfeito: sessão vinculada a ${binding.taskPath}. Use somente o adaptador Node deste hub.`,
       `Reclassifique a intenção a cada mensagem: quando o trabalho troca de artefato durável — o design terminou e começa o plano, o plano terminou e começa a implementação —, isso é uma nova fase. Encerre a fase terminada com ${base} stop --agent ${agent} --session ${sessionId} --status concluido --config ${configPath} e só então promova e inicie o próximo artefato; nunca deixe duas tarefas abertas representando a mesma feature.`,
-      `Ao encerrar uma entrega, o agente decide o status a partir do contexto; só pergunte à pessoa usuária diante de ambiguidade material: ${base} stop --agent ${agent} --session ${sessionId} --status STATUS --config ${configPath}. STATUS é obrigatório e descreve o que aconteceu de fato: aprovacao (terminou e precisa de conferência), concluido (terminou e é verificável sozinho, ou o usuário já confirmou), cancelado (abandonado), pausa (SÓ para stand-by real, nunca como desfecho de trabalho terminado).`,
+      `O cronômetro acompanha a tarefa, não a resposta: continua correndo entre as mensagens e só para no desfecho da tarefa, quando a pessoa usuária confirma o resultado, troca de assunto ou encerra o trabalho. Terminar uma resposta ou entregar uma etapa não é desfecho. No desfecho, o agente decide o status a partir do contexto; só pergunte à pessoa usuária diante de ambiguidade material: ${base} stop --agent ${agent} --session ${sessionId} --status STATUS --config ${configPath}. STATUS é obrigatório e descreve o que aconteceu de fato: aprovacao (terminou e precisa de conferência), concluido (terminou e é verificável sozinho, ou o usuário já confirmou), cancelado (abandonado), pausa (SÓ para stand-by real, nunca como desfecho de trabalho terminado).`,
     ].join("\n\n");
   }
   return [
@@ -69,7 +69,7 @@ function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding
     `Criar: ${base} create "TÍTULO" --responsavel ${defaultResponsavel} --marca MARCA --projeto PROJETO --backend headless --config ${configPath}`,
     `Promover uma nota com execução: ${base} promote "CAMINHO_EXATO" --responsavel ${defaultResponsavel} --marca Madame_Labs --projeto PROJETO --config ${configPath}`,
     `Iniciar: ${base} start "CAMINHO_EXATO" --agent ${agent} --session ${sessionId} --backend headless --config ${configPath}`,
-    `A pessoa usuária pode dispensar tarefa e cronômetro explicitamente; nunca escolher ou criar silenciosamente. Use somente este adaptador Node. Ao encerrar uma entrega, o agente decide o status a partir do contexto; só pergunte diante de ambiguidade material. ${base} stop exige --status: aprovacao (terminou e precisa de conferência), concluido (verificável sozinho, ou já confirmado), cancelado (abandonado) ou pausa (só stand-by real).`,
+    `A pessoa usuária pode dispensar tarefa e cronômetro explicitamente; nunca escolher ou criar silenciosamente. Use somente este adaptador Node. O cronômetro acompanha a tarefa, não a resposta: não pare ao fim de cada resposta, só no desfecho da tarefa (confirmação, troca de assunto ou encerramento). No desfecho, o agente decide o status a partir do contexto; só pergunte diante de ambiguidade material. ${base} stop exige --status: aprovacao (terminou e precisa de conferência), concluido (verificável sozinho, ou já confirmado), cancelado (abandonado) ou pausa (só stand-by real).`,
   ].join("\n\n");
 }
 
