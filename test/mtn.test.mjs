@@ -203,3 +203,26 @@ test("open tasks hide the vault's own closed statuses", async () => {
     assert.deepEqual((await backend.listOpen()).map((task) => task.path), ["c.md"]);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+// O plugin grava `completedDate` sozinho quando a tarefa fecha; o `mtn update
+// --status` nao. Fechar pelo headless deixava `done` sem data, e o contrato
+// tasknotes.task 0.3.0-rc.5 recusa o registro -- foram 62 notas no ENGENHARIA.
+test("closing a task headless also records the completion date", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-completed-"));
+  const output = join(dir, "calls.jsonl");
+  const script = join(dir, "fake.mjs");
+  await writeFile(script, `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.OUT, JSON.stringify(process.argv.slice(2)) + '\\n');`);
+  try {
+    const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault", vocabulary: ENGLISH });
+    const before = process.env.OUT; process.env.OUT = output;
+    await backend.setStatus("a.md", "done");
+    await backend.setStatus("b.md", "cancelled");
+    await backend.setStatus("c.md", "review");
+    process.env.OUT = before;
+    const today = new Date().toLocaleDateString("sv-SE");
+    const calls = (await readFile(output, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    assert.deepEqual(calls[0], ["update", "a.md", "--status", "done", "--set-new", `completedDate=${today}`, "--path", "C:/vault"]);
+    assert.deepEqual(calls[1], ["update", "b.md", "--status", "cancelled", "--set-new", `completedDate=${today}`, "--path", "C:/vault"]);
+    assert.deepEqual(calls[2], ["update", "c.md", "--status", "review", "--path", "C:/vault"]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

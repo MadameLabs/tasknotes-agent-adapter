@@ -481,6 +481,14 @@ test("promote writes the vault vocabulary into a real collection", async () => {
 
     const opened = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "open", "--config", config])).stdout);
     assert.ok(opened.tasks.some((task) => task.path === "01-planejamento/Plano.md"), JSON.stringify(opened));
+
+    // Fechar pelo headless grava a data de conclusao, pelo nome do vault.
+    const closed = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "set-status", "01-planejamento/Plano.md",
+      "--status", "concluido", "--config", config])).stdout);
+    assert.equal(closed.ok, true, JSON.stringify(closed));
+    const done = await (await import("node:fs/promises")).readFile(join(vault, "01-planejamento", "Plano.md"), "utf8");
+    assert.match(done, /status: done/);
+    assert.match(done, new RegExp(`completedDate: '?${new Date().toLocaleDateString("sv-SE")}`));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

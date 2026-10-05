@@ -77,7 +77,15 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
     listOpen: async () => (await listTasks()).filter((task) => !task.archived && !closed.has(task.status)),
     getTask: findTask,
     getActiveTimers,
-    setStatus: (path, status) => invoke(["update", path, "--status", status]),
+    // O plugin grava `completedDate` sozinho quando a tarefa fecha; o `mtn
+    // update --status` nao, e o contrato tasknotes.task recusa `done` sem data
+    // -- foram 62 notas assim no ENGENHARIA. O nome vem do mapeamento da
+    // colecao (`dataConclusao` na BIBLIOTECA). Reabrir nao limpa a data: o mtn
+    // nao remove campo, e o plugin corrige ao tocar na nota.
+    setStatus: (path, status) => invoke([
+      "update", path, "--status", status,
+      ...(closed.has(status) ? ["--set-new", `completedDate=${new Date().toLocaleDateString("sv-SE")}`] : []),
+    ]),
     async startTimer(path) {
       await invoke(["timer", "start", path]);
       // Identidade lida de volta do vault, nunca do relogio local: e ela que
