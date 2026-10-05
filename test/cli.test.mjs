@@ -441,6 +441,51 @@ test("promote turns an existing planning note into a task without asking for a b
   }
 });
 
+// O ENGENHARIA grava `assignees`, `marca`, `projects` e status em ingles desde
+// 2026-10. A nota de planejamento tem `type` proprio, e e tarefa pela tag.
+test("promote writes the vault vocabulary into a real collection", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-promote-vocab-"));
+  const vault = join(dir, "vault");
+  const config = join(dir, "config.json");
+  try {
+    assert.equal(spawnSync(process.execPath, [mtn, "init", vault], { encoding: "utf8" }).status, 0);
+    await mkdir(join(vault, "01-planejamento"));
+    await writeFile(join(vault, "01-planejamento", "Plano.md"), "---\ntype: plano\ntitle: Plano\n---\nCorpo.\n");
+    await writeFile(config, JSON.stringify({
+      workspace: "madamelabs-code",
+      vault: "ENGENHARIA",
+      vaultPath: vault,
+      defaultResponsavel: "arthur",
+      defaultBackend: "headless",
+      headless: { mtnPath: mtn },
+      stateDir: join(dir, "state"),
+      vocabulary: {
+        statuses: { "to-do": "open", "em-andamento": "in-progress", aprovacao: "review", pausa: "paused", concluido: "done", cancelado: "cancelled" },
+        fields: { responsavel: "assignees", marca: "marca", projeto: "projects" },
+      },
+    }));
+
+    const promoted = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "promote", "01-planejamento/Plano.md",
+      "--responsavel", "arthur", "--marca", "Madame_Labs", "--projeto", "projeto-x", "--config", config])).stdout);
+    assert.equal(promoted.ok, true, JSON.stringify(promoted));
+
+    const note = await (await import("node:fs/promises")).readFile(join(vault, "01-planejamento", "Plano.md"), "utf8");
+    assert.match(note, /type: plano/);
+    assert.match(note, /- task/);
+    assert.match(note, /status: backlog/);
+    assert.match(note, /assignees:\s+- '?\[\[Arthur_Cardoso\]\]/);
+    assert.match(note, /marca:\s+- '?\[\[Madame_Labs\]\]/);
+    assert.match(note, /projects:\s+- '?\[\[projeto-x\]\]/);
+    assert.doesNotMatch(note, /Responsavel|Marca:|Projeto:/);
+    assert.match(note, /Corpo\./);
+
+    const opened = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "open", "--config", config])).stdout);
+    assert.ok(opened.tasks.some((task) => task.path === "01-planejamento/Plano.md"), JSON.stringify(opened));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("link-project attaches an existing task to one or more projects", async () => {
   await fixture(async ({ config, calls }) => {
     const linked = JSON.parse((await run(process.execPath, [

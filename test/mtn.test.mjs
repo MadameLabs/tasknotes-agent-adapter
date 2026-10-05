@@ -49,8 +49,7 @@ test("promotes one exact note with the approved TaskNotes metadata", async () =>
   const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-promote-"));
   const output = join(dir, "args.json");
   const script = join(dir, "fake.mjs");
-  // O promote chama o mtn duas vezes -- promote e depois o status inicial --,
-  // entao o falso registra uma linha por invocacao em vez de sobrescrever.
+  // O falso registra uma linha por invocacao, para provar que e uma so.
   await writeFile(script, `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.OUT, JSON.stringify(process.argv.slice(2)) + '\\n');`);
   try {
     const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault" });
@@ -62,15 +61,16 @@ test("promotes one exact note with the approved TaskNotes metadata", async () =>
     });
     process.env.OUT = before;
     const calls = (await (await import("node:fs/promises")).readFile(output, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
-    assert.deepEqual(calls[0], [
-      "promote", "01-planejamento/Brainstorm.md",
-      "--responsavel", "[[Arthur_Cardoso]]",
-      "--marca", "[[Madame_Labs]]",
-      "--projeto", "[[tasknotes-dual-vault-e-adaptador]]",
+    // Uma escrita so, nascendo em backlog, com os nomes padrao do vocabulario.
+    assert.deepEqual(calls, [[
+      "update", "01-planejamento/Brainstorm.md",
+      "--add-tag", "task",
+      "--status", "backlog",
+      "--set-new-list", "Responsavel=[[Arthur_Cardoso]]",
+      "--set-new-list", "Marca=[[Madame_Labs]]",
+      "--set-new-list", "Projeto=[[tasknotes-dual-vault-e-adaptador]]",
       "--path", "C:/vault",
-    ]);
-    // Nasce em backlog: o mtn grava `to-do` fixo no promote e o adaptador corrige.
-    assert.deepEqual(calls[1], ["update", "01-planejamento/Brainstorm.md", "--status", "backlog", "--path", "C:/vault"]);
+    ]]);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -149,13 +149,57 @@ test("creates a task headless: mtn create, promote with metadata, initial status
     const calls = (await readFile(output, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
     assert.deepEqual(calls[0], ["create", "Revisar hooks", "--path", "C:/vault"]);
     assert.deepEqual(calls[1], [
-      "promote", "06-tarefas/Revisar hooks.md",
+      "update", "06-tarefas/Revisar hooks.md",
+      "--add-tag", "task", "--status", "backlog",
       // Wikilink como no backend desktop: sem colchetes o vault grava texto solto.
-      "--responsavel", "[[Arthur_Cardoso]]", "--marca", "[[Madame_Labs]]", "--projeto", "[[tasknotes-dual-vault-e-adaptador]]",
+      "--set-new-list", "Responsavel=[[Arthur_Cardoso]]", "--set-new-list", "Marca=[[Madame_Labs]]", "--set-new-list", "Projeto=[[tasknotes-dual-vault-e-adaptador]]",
       "--path", "C:/vault",
     ]);
-    assert.deepEqual(calls[2], ["update", "06-tarefas/Revisar hooks.md", "--status", "backlog", "--path", "C:/vault"]);
     assert.equal(task.path, "06-tarefas/Revisar hooks.md");
     assert.equal(task.status, "backlog");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+const ENGLISH = {
+  statuses: { backlog: "backlog", "to-do": "open", "em-andamento": "in-progress", aprovacao: "review", pausa: "paused", concluido: "done", cancelado: "cancelled" },
+  fields: { responsavel: "assignees", marca: "marca", projeto: "projects" },
+};
+
+// O `mtn promote` do fork grava Responsavel, Marca, Projeto e `to-do` literais.
+// Um vault com outro vocabulario precisa da promocao composta pelo `update`,
+// que ja promove nota comum pela tag, com os nomes vindos do config.
+test("promotes with the vault vocabulary through one mtn update", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-vocab-"));
+  const output = join(dir, "calls.jsonl");
+  const script = join(dir, "fake.mjs");
+  await writeFile(script, `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.OUT, JSON.stringify(process.argv.slice(2)) + '\\n');`);
+  try {
+    const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault", vocabulary: ENGLISH });
+    const before = process.env.OUT; process.env.OUT = output;
+    await backend.promoteTask("01-planejamento/Plano.md", { responsavel: "[[Arthur_Cardoso]]", marca: "[[Madame_Labs]]", projeto: "[[projeto-x]]" });
+    await backend.setProjects("01-planejamento/Plano.md", ["projeto-y"]);
+    process.env.OUT = before;
+    const calls = (await readFile(output, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    assert.deepEqual(calls[0], [
+      "update", "01-planejamento/Plano.md",
+      "--add-tag", "task",
+      "--status", "backlog",
+      "--set-new-list", "assignees=[[Arthur_Cardoso]]",
+      "--set-new-list", "marca=[[Madame_Labs]]",
+      "--set-new-list", "projects=[[projeto-x]]",
+      "--path", "C:/vault",
+    ]);
+    assert.deepEqual(calls[1], ["update", "01-planejamento/Plano.md", "--set-new-list", "projects=[[projeto-y]]", "--path", "C:/vault"]);
+    assert.equal(calls.length, 2);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("open tasks hide the vault's own closed statuses", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-vocab-open-"));
+  const script = join(dir, "fake.mjs");
+  await writeFile(script, `console.log(JSON.stringify([{ path: "a.md", status: "done" }, { path: "b.md", status: "cancelled" }, { path: "c.md", status: "review" }]));`);
+  try {
+    const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault", vocabulary: ENGLISH });
+    assert.deepEqual((await backend.listOpen()).map((task) => task.path), ["c.md"]);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

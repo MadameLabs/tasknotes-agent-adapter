@@ -67,3 +67,16 @@ test("sets projects through the documented task update endpoint", async () => {
     assert.deepEqual(put.body, { projects: ["[[Projeto]]", "[[Outro]]"] });
   });
 });
+
+test("desktop writes owner, brand and initial status with the vault vocabulary", async () => {
+  await withServer(async ({ baseUrl, calls }) => {
+    const vocabulary = {
+      statuses: { backlog: "backlog", "to-do": "open", "em-andamento": "in-progress", aprovacao: "review", pausa: "paused", concluido: "done", cancelado: "cancelled" },
+      fields: { responsavel: "assignees", marca: "marca", projeto: "projects" },
+    };
+    const api = createTaskNotesApiBackend({ baseUrl, authToken: "token", vocabulary });
+    await api.createTask({ title: "Nova", responsavel: "Arthur_Cardoso", marcas: ["Madame_Labs"], projeto: "Projeto" });
+    assert.equal(calls.find((call) => call.method === "POST").body.status, "backlog");
+    assert.deepEqual(calls.find((call) => call.method === "PUT").body, { assignees: ["[[Arthur_Cardoso]]"], marca: ["[[Madame_Labs]]"] });
+  });
+});

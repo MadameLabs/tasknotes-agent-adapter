@@ -328,3 +328,17 @@ test("adopts the timer the auto-start workflow opened from its own status change
     assert.ok(bindings[0].confirmedAt);
   });
 });
+
+test("start moves the task to the vault's in-progress value and refuses its closed values", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-vocab-"));
+  try {
+    const state = await openState(dir);
+    const calls = [];
+    const backend = fakeBackend({ name: "headless", active: new Map(), calls });
+    const vocabulary = { statuses: { "em-andamento": "in-progress", concluido: "done", cancelado: "cancelled" } };
+    await startWork({ state, api: backend.api, sessionKey: "claude:v", vault: "ENGENHARIA", taskPath: "a", vocabulary });
+    assert.deepEqual(calls[0], ["status", "a", "in-progress"]);
+    backend.api.getTask = async (path) => ({ id: path, status: "done" });
+    await assert.rejects(startWork({ state, api: backend.api, sessionKey: "claude:w", vault: "ENGENHARIA", taskPath: "b", vocabulary }), /task_not_open/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

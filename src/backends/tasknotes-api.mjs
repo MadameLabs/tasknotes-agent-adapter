@@ -1,11 +1,14 @@
-const closed = new Set(["concluido", "cancelado"]);
-// Tarefa nasce em `backlog`: trabalho aceito, ainda nao priorizado. O `to-do`
-// e uma decisao de priorizacao, e quem a toma e a pessoa, nao o adaptador.
-// O mesmo valor esta em mtn.mjs, para os dois backends nascerem igual.
-const INITIAL_STATUS = "backlog";
+import { DEFAULT_VOCABULARY, closedStatuses } from "../vocabulary.mjs";
+
 const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
 
-export function createTaskNotesApiBackend({ baseUrl, authToken }) {
+export function createTaskNotesApiBackend({ baseUrl, authToken, vocabulary = DEFAULT_VOCABULARY }) {
+  const closed = closedStatuses(vocabulary);
+  // Tarefa nasce em `backlog`: trabalho aceito, ainda nao priorizado. O `to-do`
+  // e uma decisao de priorizacao, e quem a toma e a pessoa, nao o adaptador.
+  // O mesmo papel esta em mtn.mjs, para os dois backends nascerem igual.
+  const initialStatus = vocabulary.statuses.backlog;
+  const { fields } = vocabulary;
   const base = baseUrl.replace(/\/$/, "");
   async function request(path, options = {}) {
     const response = await fetch(`${base}${path}`, {
@@ -29,14 +32,14 @@ export function createTaskNotesApiBackend({ baseUrl, authToken }) {
       }
     },
     createTask: async (input) => {
-      const body = { title: input.title, status: input.status ?? INITIAL_STATUS };
+      const body = { title: input.title, status: input.status ?? initialStatus };
       if (input.projeto) body.projects = [wikilink(input.projeto)];
       const created = await request("/api/tasks", { method: "POST", body: JSON.stringify(body) });
       const path = created.id ?? created.path;
       if (input.responsavel || input.marcas?.length) {
         const patch = {};
-        if (input.responsavel) patch.Responsavel = [wikilink(input.responsavel)];
-        if (input.marcas?.length) patch.Marca = input.marcas.map(wikilink);
+        if (input.responsavel) patch[fields.responsavel] = [wikilink(input.responsavel)];
+        if (input.marcas?.length) patch[fields.marca] = input.marcas.map(wikilink);
         await request(taskUrl(path), { method: "PUT", body: JSON.stringify(patch) });
         // O POST responde antes do PUT, e nesse retrato Responsavel ainda
         // carrega o defaultValue do user field do plugin. Devolver o retrato

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { bundledMtnPath } from "./mtn-path.mjs";
+import { resolveVocabulary } from "./vocabulary.mjs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -70,5 +71,5 @@ export async function loadConfig(path) {
   const stateDir = typeof config.stateDir === "string" && config.stateDir.trim()
     ? config.stateDir
     : defaultStateDir();
-  return { ...config, headless, stateDir };
+  return { ...config, headless, stateDir, vocabulary: resolveVocabulary(config.vocabulary) };
 }

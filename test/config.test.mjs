@@ -87,3 +87,39 @@ test("desktop default still requires the desktop block", async () => {
   await withConfig({ ...validConfig, defaultBackend: "headless", desktop: { baseUrl: "x" } }, (path) =>
     assert.rejects(loadConfig(path), /missing_authToken/));
 });
+
+// O vocabulario do vault: sem bloco, vale o portugues que os dois vaults usavam
+// ate 2026-10, para a OFICINA seguir intacta enquanto o ENGENHARIA migra.
+test("vocabulary defaults to the Portuguese names both vaults used", async () => {
+  await withConfig(validConfig, async (path) => {
+    const { vocabulary } = await loadConfig(path);
+    assert.equal(vocabulary.statuses.aprovacao, "aprovacao");
+    assert.equal(vocabulary.statuses["em-andamento"], "em-andamento");
+    assert.deepEqual(vocabulary.fields, { responsavel: "Responsavel", marca: "Marca", projeto: "Projeto" });
+  });
+});
+
+test("vocabulary maps roles to the names written in the vault", async () => {
+  const vocabulary = {
+    statuses: { "to-do": "open", "em-andamento": "in-progress", aprovacao: "review", pausa: "paused", concluido: "done", cancelado: "cancelled" },
+    fields: { responsavel: "assignees", marca: "marca", projeto: "projects" },
+  };
+  await withConfig({ ...validConfig, vocabulary }, async (path) => {
+    const loaded = (await loadConfig(path)).vocabulary;
+    assert.equal(loaded.statuses.backlog, "backlog");
+    assert.equal(loaded.statuses.aprovacao, "review");
+    assert.equal(loaded.fields.responsavel, "assignees");
+  });
+});
+
+test("vocabulary rejects unknown roles and two roles sharing one value", async () => {
+  for (const vocabulary of [
+    { statuses: { revisao: "review" } },
+    { statuses: { concluido: "done", cancelado: "done" } },
+    { fields: { responsavel: "" } },
+  ]) {
+    await withConfig({ ...validConfig, vocabulary }, async (path) => {
+      await assert.rejects(loadConfig(path), /invalid_vocabulary/);
+    });
+  }
+});

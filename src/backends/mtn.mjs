@@ -1,18 +1,20 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { DEFAULT_VOCABULARY, closedStatuses } from "../vocabulary.mjs";
 
 const run = promisify(execFile);
-const closed = new Set(["concluido", "cancelado"]);
-// Tarefa nasce em `backlog`: trabalho aceito, ainda nao priorizado. O mesmo
-// valor esta em tasknotes-api.mjs, para os dois backends nascerem igual.
-const INITIAL_STATUS = "backlog";
 const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
 
 // O mtn nao expoe timer nem tarefa em JSON: `list --json` e a unica saida
 // estruturada, e nela uma entrada de tempo sem endTime e um timer correndo.
 const openEntry = (task) => (task.timeEntries ?? []).find((entry) => !entry.endTime);
 
-export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
+export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary = DEFAULT_VOCABULARY }) {
+  const closed = closedStatuses(vocabulary);
+  // Tarefa nasce em `backlog`: trabalho aceito, ainda nao priorizado. O mesmo
+  // papel esta em tasknotes-api.mjs, para os dois backends nascerem igual.
+  const initialStatus = vocabulary.statuses.backlog;
+  const { fields } = vocabulary;
   // Fixar o mtn por revisao significa apontar para o dist/cli.js do clone, que
   // o execFile nao sabe executar sozinho: entao chamamos o node deste processo.
   const isScript = /\.[cm]?js$/i.test(mtnPath);
@@ -50,16 +52,19 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
   const listAllTasks = async () => JSON.parse((await invoke(["list", "--json", "--limit", "100000", "--where", "true"])).replace(/^﻿/, ""));
   const findTask = async (path) => (await listAllTasks()).find((task) => task.path === path) ?? null;
 
-  async function promote(path, { responsavel, marca, projeto }) {
-    const promoted = await invoke([
-      "promote", path,
-      "--responsavel", responsavel,
-      "--marca", marca,
-      "--projeto", projeto,
-    ]);
-    await invoke(["update", path, "--status", INITIAL_STATUS]);
-    return promoted;
-  }
+  // Uma escrita so: tag, status inicial e as tres listas com os nomes do
+  // vault. O `mtn promote` do fork grava Responsavel, Marca, Projeto e `to-do`
+  // literais, e por isso deixou de servir quando o ENGENHARIA passou a gravar
+  // `assignees` e `projects`. O `update` promove nota comum pela tag desde que
+  // `type` nao esteja em `explicit_type_keys` -- os dois vaults usam `types`.
+  const promote = (path, { responsavel, marca, projeto }) => invoke([
+    "update", path,
+    "--add-tag", "task",
+    "--status", initialStatus,
+    "--set-new-list", `${fields.responsavel}=${responsavel}`,
+    "--set-new-list", `${fields.marca}=${marca}`,
+    "--set-new-list", `${fields.projeto}=${projeto}`,
+  ]);
 
   async function getActiveTimers() {
     return (await listAllTasks()).flatMap((task) => {
@@ -82,20 +87,9 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       return { taskPath: path, startTime };
     },
     stopTimer: (path) => invoke(["timer", "stop", path]),
-    // O mtn tem `promote` (fork MadameLabs, commit 5fdabaf): ele grava a tag
-    // `task`, o status inicial e as tres listas de uma vez, e e ele quem sabe
-    // escrever lista sem derrubar a leitura da colecao. Ja se tentou trocar
-    // isso por uma composicao de `update --set-new-list`, por causa de um
-    // clone parado numa branch anterior ao comando: o sintoma foi
-    // `mtn_failed:unknown command 'promote'`, que quer dizer clone velho, nao
-    // comando inexistente. Conferir com `git log --oneline fork/main` antes de
-    // concluir que o mtn nao tem o que o adaptador chama.
-    // O `mtn promote` grava `to-do` fixo e nao aceita `--status`, entao o
-    // status inicial e corrigido logo depois -- e o adaptador, nao a versao do
-    // mtn instalada, que decide onde a tarefa nasce.
     promoteTask: promote,
-    // O `mtn create` so aceita texto livre e nao grava Responsavel, Marca nem
-    // Projeto: a nota nasce e passa pelo mesmo promote de uma nota existente.
+    // O `mtn create` so aceita texto livre e nao grava responsavel, marca nem
+    // projeto: a nota nasce e passa pelo mesmo promote de uma nota existente.
     // O caminho vem da linha "→ <caminho>" que o create imprime, porque o parser
     // de linguagem natural do mtn pode tirar pedacos do titulo (datas, #tags).
     async createTask({ title, responsavel, marcas, projeto }) {
@@ -111,10 +105,11 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [] }) {
       (await getActiveTimers()).some((item) => item.task.id === path && item.session.startTime === identity?.startTime),
     // `--set-new-list` monta a lista do zero na primeira atribuicao e acumula
     // nas seguintes: troca a lista inteira, como o PUT do backend desktop. O
-    // campo e `Projeto`, o nome no vault do campo canonico `projects`.
+    // nome do campo vem do vocabulario: `Projeto` na BIBLIOTECA, `projects` no
+    // ENGENHARIA.
     setProjects: (path, projetos) => invoke([
       "update", path,
-      ...projetos.flatMap((projeto) => ["--set-new-list", `Projeto=${wikilink(projeto)}`]),
+      ...projetos.flatMap((projeto) => ["--set-new-list", `${fields.projeto}=${wikilink(projeto)}`]),
     ]),
   };
 }
