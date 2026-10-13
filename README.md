@@ -49,12 +49,28 @@ link-project "CAMINHO.md" vincula tarefa a projeto
 set-status "CAMINHO.md"  corrige status sem tocar no cronômetro
 start "CAMINHO.md"       vincula a sessão e inicia o cronômetro
 stop                     encerra; --status é obrigatório
-diagnose                 mostra vínculos, leases e divergências
+diagnose [--timers]      mostra vínculos, leases e divergências; --timers lista os cronômetros abertos e há quantas horas
 recover "CAMINHO.md"     libera vínculo de sessão morta
+suggest-end              última atividade real no transcript de uma sessão (só lê)
+fix-time "CAMINHO.md"    corrige início ou fim de uma entrada de tempo já fechada
 hook-start / hook-end    entrypoints dos hooks de sessão
 ```
 
 `stop` exige `--status` de propósito: um desfecho padrão mentiria sobre o que aconteceu com a tarefa.
+
+### Cronômetro que ficou aberto
+
+Quando uma sessão morre sem encerrar, o cronômetro continua correndo até alguém pará-lo, e a entrada de tempo ganha horas que ninguém trabalhou. O conserto tem três passos:
+
+```bash
+tasknotes-agent stop --agent claude --session <sessão dona> --status pausa --config …   # fecha pela sessão dona
+tasknotes-agent suggest-end --agent claude --session <sessão dona> [--after <início da entrada>] --config …
+tasknotes-agent fix-time "06-tarefas/Tarefa.md" --entry <startTime da entrada> --end <ISO> --reason "…" --config …
+```
+
+O `suggest-end` só lê: devolve o transcript e o horário da última mensagem ou chamada de ferramenta da sessão (Claude em `~/.claude/projects`, Codex em `~/.codex/sessions`). Resumo de ausência, troca de configuração e custo não contam como atividade. Se a sessão continuou em outra tarefa depois, a última atividade não é o fim desta tarefa: confira antes de usar.
+
+O `fix-time` endereça a entrada pelo `startTime` gravado, nunca pela posição. Ele usa sempre o headless, porque a API do plugin não edita entrada de tempo, e recusa entrada ainda aberta (`time_entry_still_open`), entrada ainda presa a uma sessão viva (`time_entry_bound_to_session`), fim antes do início, horário no futuro e sobreposição com outra entrada da tarefa. `--reason` é obrigatório. A resposta traz a entrada anterior e a nova, para ficar registrada no corpo da tarefa.
 
 ## Testes
 

@@ -7,6 +7,7 @@ import { recoverOrphanTimer, recoverWork, startWork, stopWork } from "./domain.m
 import { createTaskNotesApiBackend } from "./backends/tasknotes-api.mjs";
 import { createMtnBackend } from "./backends/mtn.mjs";
 import { statusValue } from "./vocabulary.mjs";
+import { lastActivity } from "./time-entries.mjs";
 
 const [command] = process.argv.slice(2);
 const configIndex = process.argv.indexOf("--config");
@@ -95,7 +96,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
   }
   if (config) try {
     const backend = requestedBackend ?? config.defaultBackend ?? "desktop";
-    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan"].includes(command)) {
+    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "suggest-end"].includes(command)) {
       output({ ok: false, error: "unknown_command", message: "unsupported command" });
       process.exitCode = 2;
     } else if (command === "hook-start" || command === "hook-end") {
@@ -217,8 +218,44 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       if (!process.argv.includes("--stop-timer")) throw new Error("missing_stop_timer_confirmation");
       const api = backendFor(config, backend);
       output({ ok: true, result: await recoverOrphanTimer({ api, taskPath, startTime }) });
+    } else if (command === "fix-time") {
+      // Corrige o inicio ou o fim de uma entrada de tempo ja fechada -- o caso e
+      // o cronometro que ficou aberto depois que a sessao morreu e so foi
+      // parado horas depois. Sempre headless, como o promote: a API do plugin
+      // nao edita entrada de tempo. Entrada ainda presa a uma sessao viva nao
+      // se corrige: quem manda nela e o `stop` daquela sessao.
+      const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
+      const startTime = option("--entry");
+      const reason = option("--reason");
+      if (!taskPath || !startTime) throw new Error("missing_task_or_entry");
+      if (!reason) throw new Error("missing_reason");
+      const state = await diagnoseState(await openState(config.stateDir));
+      if (state.bindings.some((binding) => binding.vault === config.vault && binding.taskPath === taskPath && binding.timerIdentity?.startTime === startTime)) {
+        throw new Error("time_entry_bound_to_session");
+      }
+      const result = await backendFor(config, "headless").retimeEntry(taskPath, { startTime, newStart: option("--start"), newEnd: option("--end") });
+      output({ ok: true, result: { taskPath, reason, ...result } });
+    } else if (command === "suggest-end") {
+      // So le: aponta a ultima atividade real no transcript da sessao dona,
+      // para o agente mostrar a fonte antes de corrigir com fix-time.
+      const agent = option("--agent");
+      const sessionId = option("--session");
+      if (!agent || !sessionId) throw new Error("missing_session");
+      output({ ok: true, result: { agent, sessionId, ...await lastActivity({ agent, sessionId, after: option("--after") }) } });
     } else if (command === "diagnose") {
-      output({ ok: true, result: await diagnoseState(await openState(config.stateDir)) });
+      const result = await diagnoseState(await openState(config.stateDir));
+      // `--timers` le o vault e mostra ha quanto tempo cada cronometro esta
+      // aberto: e por ele que se acha o cronometro esquecido por sessao morta.
+      if (process.argv.includes("--timers")) {
+        const now = Date.now();
+        result.openTimers = (await backendFor(config, "headless").getActiveTimers()).map((item) => ({
+          taskPath: item.task.id,
+          startTime: item.session.startTime,
+          openHours: Math.round((now - new Date(item.session.startTime).getTime()) / 36e5 * 10) / 10,
+          sessionKey: result.bindings.find((binding) => binding.vault === config.vault && binding.taskPath === item.task.id)?.sessionKey ?? null,
+        }));
+      }
+      output({ ok: true, result });
     } else {
       output({ ok: true, command, responsavel: config.defaultResponsavel });
     }

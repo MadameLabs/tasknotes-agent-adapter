@@ -1,6 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { DEFAULT_VOCABULARY, closedStatuses } from "../vocabulary.mjs";
+import { bundledMtnPath } from "../mtn-path.mjs";
+import { retimeEntries } from "../time-entries.mjs";
 
 const run = promisify(execFile);
 const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
@@ -119,5 +123,24 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
       "update", path,
       ...projetos.flatMap((projeto) => ["--set-new-list", `${fields.projeto}=${wikilink(projeto)}`]),
     ]),
+    // O CLI do mtn so inicia e para cronometro; editar uma entrada fechada nao
+    // tem comando. A escrita passa pela mesma biblioteca que o `timer stop` usa,
+    // carregada ao lado do cli.js configurado: e ela que traduz `timeEntries`
+    // para o nome do vault (`entradaTempo` no ATELIE) e valida as entradas.
+    async retimeEntry(path, change) {
+      const dist = dirname(isScript ? mtnPath : bundledMtnPath());
+      const load = (name) => import(pathToFileURL(join(dist, name)).href);
+      const [{ withCollection }, { normalizeFrontmatter, denormalizeFrontmatter }] = await Promise.all([load("collection.js"), load("field-mapping.js")]);
+      return withCollection(async (collection, mapping) => {
+        const read = await collection.read(path);
+        if (read.error) throw new Error(`mtn_failed:${read.error.message}`);
+        const frontmatter = normalizeFrontmatter(read.frontmatter, mapping);
+        const result = retimeEntries(frontmatter.timeEntries, change);
+        const fields = denormalizeFrontmatter({ timeEntries: result.entries, dateModified: new Date().toISOString() }, mapping);
+        const written = await collection.update({ path, fields });
+        if (written.error) throw new Error(`mtn_failed:${written.error.message}`);
+        return { previous: result.previous, updated: result.updated };
+      }, vaultPath);
+    },
   };
 }
