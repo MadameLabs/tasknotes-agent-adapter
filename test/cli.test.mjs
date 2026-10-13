@@ -894,3 +894,54 @@ test("set-status refuses a completion date on an open status, a malformed date a
     assert.equal(existsSync(marker), false);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+// Sem comando de dependencia, o bloqueio entre etapas de um plano so se marcava
+// no Obsidian, a mao. O block grava no formato do plugin e preserva o que o
+// plugin ja gravou com outro reltype.
+test("block and unblock edit the dependency list on a real vault", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-block-"));
+  const vault = join(dir, "vault");
+  const config = join(dir, "config.json");
+  const cliRun = async (...args) => JSON.parse((await run(process.execPath, [fileURLToPath(cli), ...args, "--config", config])).stdout);
+  const cliFail = (...args) => JSON.parse(spawnSync(process.execPath, [fileURLToPath(cli), ...args, "--config", config], { encoding: "utf8" }).stdout);
+  const read = () => readFile(join(vault, "06-tarefas", "Etapa 4.md"), "utf8");
+  try {
+    assert.equal(spawnSync(process.execPath, [mtn, "init", vault], { encoding: "utf8" }).status, 0);
+    await mkdir(join(vault, "06-tarefas"), { recursive: true });
+    await writeFile(join(vault, "06-tarefas", "Etapa 4.md"),
+      "---\ntitle: Etapa 4\nblockedBy:\n  - uid: '[[Revisao]]'\n    reltype: STARTTOSTART\n    gap: P1D\n---\nCorpo.\n");
+    for (const name of ["Etapa 3", "Revisao"]) await writeFile(join(vault, "06-tarefas", `${name}.md`), `---\ntitle: ${name}\n---\n`);
+    await writeFile(config, JSON.stringify({
+      workspace: "madamelabs-code", vault: "ENGENHARIA", vaultPath: vault, defaultResponsavel: "arthur",
+      defaultBackend: "headless", headless: { mtnPath: mtn }, stateDir: join(dir, "state"),
+    }));
+    for (const name of ["Etapa 4", "Etapa 3", "Revisao"]) {
+      await cliRun("promote", `06-tarefas/${name}.md`, "--responsavel", "arthur", "--marca", "Madame_Labs", "--projeto", "plano");
+    }
+
+    const blocked = await cliRun("block", "06-tarefas/Etapa 4.md", "--by", "06-tarefas/Etapa 3.md");
+    assert.equal(blocked.ok, true, JSON.stringify(blocked));
+    assert.deepEqual(blocked.result.blockedBy, [
+      { uid: "[[Revisao]]", reltype: "STARTTOSTART", gap: "P1D" },
+      { uid: "[[Etapa 3]]", reltype: "FINISHTOSTART" },
+    ]);
+    let note = await read();
+    assert.match(note, /uid: '?\[\[Etapa 3\]\]'?\s+reltype: FINISHTOSTART/);
+    assert.match(note, /gap: P1D/);
+    assert.match(note, /Corpo\./);
+
+    const again = await cliRun("block", "06-tarefas/Etapa 4.md", "--by", "06-tarefas/Etapa 3.md");
+    assert.equal(again.result.blockedBy.length, 2);
+
+    const freed = await cliRun("unblock", "06-tarefas/Etapa 4.md", "--by", "06-tarefas/Etapa 3.md");
+    assert.deepEqual(freed.result.blockedBy, [{ uid: "[[Revisao]]", reltype: "STARTTOSTART", gap: "P1D" }]);
+    note = await read();
+    assert.doesNotMatch(note, /Etapa 3/);
+
+    assert.equal(cliFail("block", "06-tarefas/Etapa 4.md", "--by", "06-tarefas/Nada.md").error, "blocker_not_found");
+    assert.equal(cliFail("block", "06-tarefas/Etapa 4.md", "--by", "06-tarefas/Etapa 4.md").error, "task_cannot_block_itself");
+    assert.equal(cliFail("block", "06-tarefas/Etapa 4.md").error, "missing_task_or_blocker");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

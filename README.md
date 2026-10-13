@@ -53,6 +53,8 @@ diagnose [--timers]      mostra vínculos, leases e divergências; --timers list
 recover "CAMINHO.md"     libera vínculo de sessão morta
 suggest-end              última atividade real no transcript de uma sessão (só lê)
 fix-time "CAMINHO.md"    corrige início ou fim de uma entrada de tempo já fechada
+block "CAMINHO.md" --by "OUTRA.md"    marca que a tarefa depende de outra; repetir --by para mais de uma
+unblock "CAMINHO.md" --by "OUTRA.md"  tira a dependência
 hook-start / hook-end    entrypoints dos hooks de sessão
 ```
 
@@ -71,6 +73,12 @@ tasknotes-agent fix-time "06-tarefas/Tarefa.md" --entry <startTime da entrada> -
 O `suggest-end` só lê: devolve o transcript e o horário da última mensagem ou chamada de ferramenta da sessão (Claude em `~/.claude/projects`, Codex em `~/.codex/sessions`). Resumo de ausência, troca de configuração e custo não contam como atividade. Se a sessão continuou em outra tarefa depois, a última atividade não é o fim desta tarefa: confira antes de usar.
 
 O `fix-time` endereça a entrada pelo `startTime` gravado, nunca pela posição. Ele usa sempre o headless, porque a API do plugin não edita entrada de tempo, e recusa entrada ainda aberta (`time_entry_still_open`), entrada ainda presa a uma sessão viva (`time_entry_bound_to_session`), fim antes do início, horário no futuro e sobreposição com outra entrada da tarefa. `--reason` é obrigatório. A resposta traz a entrada anterior e a nova, para ficar registrada no corpo da tarefa.
+
+### Dependências
+
+`block` e `unblock` gravam a lista de dependências do TaskNotes (`blockedBy`, com o nome do campo vindo do mapeamento do vault) no formato do plugin: `uid` como wikilink pelo nome da nota e `reltype: FINISHTOSTART`. Usam sempre o headless. `block` recusa tarefa que bloqueia a si mesma (`task_cannot_block_itself`) e bloqueador que não existe (`blocker_not_found`); repetir um bloqueio não duplica. Dependências gravadas pelo plugin, com outro `reltype` ou `gap`, ficam como estão.
+
+O mapeamento do mdbase (`_types/task.md`, em `implements[].fields`) precisa dar ao `blockedBy` o mesmo nome que o plugin usa no `data.json`. Se divergirem, o bloqueio é gravado num campo que o Obsidian não lê.
 
 ## Testes
 

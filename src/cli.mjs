@@ -104,7 +104,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
   }
   if (config) try {
     const backend = requestedBackend ?? config.defaultBackend ?? "desktop";
-    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "suggest-end"].includes(command)) {
+    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "suggest-end", "block", "unblock"].includes(command)) {
       output({ ok: false, error: "unknown_command", message: "unsupported command" });
       process.exitCode = 2;
     } else if (command === "hook-start" || command === "hook-end") {
@@ -259,6 +259,16 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       const sessionId = option("--session");
       if (!agent || !sessionId) throw new Error("missing_session");
       output({ ok: true, result: { agent, sessionId, ...await lastActivity({ agent, sessionId, after: option("--after") }) } });
+    } else if (command === "block" || command === "unblock") {
+      // Marca ou desmarca dependencia: a tarefa so pode comecar quando as de
+      // --by terminarem. Sempre headless, como o fix-time: a lista e escrita de
+      // frontmatter, e o mtn le o mesmo arquivo que o plugin.
+      const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
+      const blockers = options("--by").filter((value) => value && !value.startsWith("--"));
+      if (!taskPath || !blockers.length) throw new Error("missing_task_or_blocker");
+      if (blockers.includes(taskPath)) throw new Error("task_cannot_block_itself");
+      const blockedBy = await backendFor(config, "headless").editBlockedBy(taskPath, blockers, command === "block" ? "add" : "remove");
+      output({ ok: true, result: { taskPath, blockedBy } });
     } else if (command === "diagnose") {
       const result = await diagnoseState(await openState(config.stateDir));
       // `--timers` le o vault e mostra ha quanto tempo cada cronometro esta

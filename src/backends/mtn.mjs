@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { DEFAULT_VOCABULARY, closedStatuses } from "../vocabulary.mjs";
 import { bundledMtnPath } from "../mtn-path.mjs";
 import { retimeEntries } from "../time-entries.mjs";
+import { addBlockers, removeBlockers } from "../dependencies.mjs";
 
 const run = promisify(execFile);
 const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
@@ -70,6 +71,13 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
     "--set-new-list", `${fields.projeto}=${projeto}`,
   ]);
 
+  async function loadLibrary() {
+    const dist = dirname(isScript ? mtnPath : bundledMtnPath());
+    const load = (name) => import(pathToFileURL(join(dist, name)).href);
+    const [{ withCollection }, { normalizeFrontmatter, denormalizeFrontmatter }] = await Promise.all([load("collection.js"), load("field-mapping.js")]);
+    return { withCollection, normalizeFrontmatter, denormalizeFrontmatter };
+  }
+
   async function getActiveTimers() {
     return (await listAllTasks()).flatMap((task) => {
       const entry = openEntry(task);
@@ -130,9 +138,7 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
     // carregada ao lado do cli.js configurado: e ela que traduz `timeEntries`
     // para o nome do vault (`entradaTempo` no ATELIE) e valida as entradas.
     async retimeEntry(path, change) {
-      const dist = dirname(isScript ? mtnPath : bundledMtnPath());
-      const load = (name) => import(pathToFileURL(join(dist, name)).href);
-      const [{ withCollection }, { normalizeFrontmatter, denormalizeFrontmatter }] = await Promise.all([load("collection.js"), load("field-mapping.js")]);
+      const { withCollection, normalizeFrontmatter, denormalizeFrontmatter } = await loadLibrary();
       return withCollection(async (collection, mapping) => {
         const read = await collection.read(path);
         if (read.error) throw new Error(`mtn_failed:${read.error.message}`);
@@ -142,6 +148,29 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
         const written = await collection.update({ path, fields });
         if (written.error) throw new Error(`mtn_failed:${written.error.message}`);
         return { previous: result.previous, updated: result.updated };
+      }, vaultPath);
+    },
+    // Tambem sem comando no mtn: a lista de dependencias e de objetos, e o
+    // `--set-new-list` so grava texto. Mesma biblioteca do retimeEntry, para o
+    // nome do campo sair do mapeamento do vault. Quem bloqueia tem de existir:
+    // dependencia para nota inexistente nao aparece no Obsidian como bloqueio.
+    async editBlockedBy(path, blockerPaths, mode) {
+      const { withCollection, normalizeFrontmatter, denormalizeFrontmatter } = await loadLibrary();
+      return withCollection(async (collection, mapping) => {
+        const read = await collection.read(path);
+        if (read.error) throw new Error(`mtn_failed:${read.error.message}`);
+        if (mode === "add") {
+          for (const blocker of blockerPaths) {
+            const found = await collection.read(blocker);
+            if (found.error) throw new Error(`blocker_not_found:${blocker}`);
+          }
+        }
+        const current = normalizeFrontmatter(read.frontmatter, mapping).blockedBy ?? [];
+        const blockedBy = mode === "add" ? addBlockers(current, blockerPaths) : removeBlockers(current, blockerPaths);
+        const fields = denormalizeFrontmatter({ blockedBy, dateModified: new Date().toISOString() }, mapping);
+        const written = await collection.update({ path, fields });
+        if (written.error) throw new Error(`mtn_failed:${written.error.message}`);
+        return blockedBy;
       }, vaultPath);
     },
   };
