@@ -46,7 +46,7 @@ open                     lista tarefas abertas
 create "TÍTULO"          cria tarefa (só no backend desktop)
 promote "CAMINHO.md"     transforma nota existente em tarefa
 link-project "CAMINHO.md" vincula tarefa a projeto
-set-status "CAMINHO.md"  corrige status sem tocar no cronômetro
+set-status "CAMINHO.md"  corrige status sem tocar no cronômetro; --completed-date AAAA-MM-DD para fechar com data passada
 start "CAMINHO.md"       vincula a sessão e inicia o cronômetro
 stop                     encerra; --status é obrigatório
 diagnose [--timers]      mostra vínculos, leases e divergências; --timers lista os cronômetros abertos e há quantas horas

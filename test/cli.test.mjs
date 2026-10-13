@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, spawnSync } from "node:child_process";
 import { mkdir, readFile, symlink, writeFile, mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -535,6 +536,15 @@ test("promote writes the vault vocabulary into a real collection", async () => {
     const done = await (await import("node:fs/promises")).readFile(join(vault, "01-planejamento", "Plano.md"), "utf8");
     assert.match(done, /status: done/);
     assert.match(done, new RegExp(`completedDate: '?${new Date().toLocaleDateString("sv-SE")}`));
+
+    // Tarefa registrada depois do fato: a data passada substitui a do dia.
+    const backdated = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "set-status", "01-planejamento/Plano.md",
+      "--status", "concluido", "--completed-date", "2026-01-15", "--config", config])).stdout);
+    assert.equal(backdated.ok, true, JSON.stringify(backdated));
+    assert.equal(backdated.result.completedDate, "2026-01-15");
+    const redated = await (await import("node:fs/promises")).readFile(join(vault, "01-planejamento", "Plano.md"), "utf8");
+    assert.match(redated, /completedDate: '?2026-01-15/);
+    assert.doesNotMatch(redated, new RegExp(`completedDate: '?${new Date().toLocaleDateString("sv-SE")}`));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -850,4 +860,37 @@ test("desktop backend fails clearly when the config has no desktop block", async
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// Data de conclusao so faz sentido em tarefa fechada e numa data real, que ja
+// passou. Recusar antes de tocar no vault, para nao gravar data inventada.
+test("set-status refuses a completion date on an open status, a malformed date and a future date", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-completed-date-"));
+  try {
+    const marker = join(dir, "called");
+    const fake = join(dir, "fake-mtn.mjs");
+    await writeFile(fake, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'x');`);
+    const configPath = join(dir, "config.json");
+    await writeFile(configPath, JSON.stringify({
+      workspace: "teste", vault: "V", vaultPath: dir, defaultResponsavel: "Arthur_Cardoso",
+      desktop: { baseUrl: "http://127.0.0.1:1", authToken: "x" },
+      headless: { mtnPath: fake },
+    }));
+    const tomorrow = new Date(Date.now() + 2 * 86400000).toLocaleDateString("sv-SE");
+    for (const [status, date, error] of [
+      ["pausa", "2026-01-15", "completed_date_requires_closed_status"],
+      ["concluido", "15/01/2026", "invalid_completed_date"],
+      ["concluido", "2026-02-30", "invalid_completed_date"],
+      ["cancelado", tomorrow, "invalid_completed_date"],
+    ]) {
+      const result = spawnSync(process.execPath, [
+        fileURLToPath(cli), "set-status", "alvo.md", "--status", status, "--completed-date", date,
+        "--backend", "headless", "--config", configPath,
+      ], { encoding: "utf8" });
+      const payload = JSON.parse(result.stdout);
+      assert.equal(payload.ok, false, `${status} ${date}`);
+      assert.equal(payload.error, error, `${status} ${date}`);
+    }
+    assert.equal(existsSync(marker), false);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });

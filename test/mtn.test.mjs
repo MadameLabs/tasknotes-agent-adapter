@@ -226,3 +226,18 @@ test("closing a task headless also records the completion date", async () => {
     assert.deepEqual(calls[2], ["update", "c.md", "--status", "review", "--path", "C:/vault"]);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test("closing a task headless with an explicit date records that date", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-backdated-"));
+  const output = join(dir, "calls.jsonl");
+  const script = join(dir, "fake.mjs");
+  await writeFile(script, `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.OUT, JSON.stringify(process.argv.slice(2)) + '\\n');`);
+  try {
+    const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault", vocabulary: ENGLISH });
+    const before = process.env.OUT; process.env.OUT = output;
+    await backend.setStatus("a.md", "done", { completedDate: "2026-01-15" });
+    process.env.OUT = before;
+    const calls = (await readFile(output, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    assert.deepEqual(calls[0], ["update", "a.md", "--status", "done", "--set-new", "completedDate=2026-01-15", "--path", "C:/vault"]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

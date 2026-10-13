@@ -85,10 +85,12 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
     // update --status` nao, e o contrato tasknotes.task recusa `done` sem data
     // -- foram 62 notas assim no ENGENHARIA. O nome vem do mapeamento da
     // colecao (`dataConclusao` na BIBLIOTECA). Reabrir nao limpa a data: o mtn
-    // nao remove campo, e o plugin corrige ao tocar na nota.
-    setStatus: (path, status) => invoke([
+    // nao remove campo, e o plugin corrige ao tocar na nota. `completedDate`
+    // explicito serve para registrar depois do fato uma tarefa que fechou em
+    // outro dia; sem ele, vale o dia de hoje.
+    setStatus: (path, status, { completedDate } = {}) => invoke([
       "update", path, "--status", status,
-      ...(closed.has(status) ? ["--set-new", `completedDate=${new Date().toLocaleDateString("sv-SE")}`] : []),
+      ...(closed.has(status) ? ["--set-new", `completedDate=${completedDate ?? new Date().toLocaleDateString("sv-SE")}`] : []),
     ]),
     async startTimer(path) {
       await invoke(["timer", "start", path]);

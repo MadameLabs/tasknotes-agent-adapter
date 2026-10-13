@@ -20,6 +20,14 @@ const options = (name) => process.argv.flatMap((value, index) => value === name 
 const requestedBackend = option("--backend");
 const BACKENDS = ["desktop", "headless"];
 const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
+// Data de calendario AAAA-MM-DD que existe de fato e nao esta no futuro.
+const isPastOrTodayDate = (value) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? "")) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime())
+    && parsed.toISOString().slice(0, 10) === value
+    && value <= new Date().toLocaleDateString("sv-SE");
+};
 
 // Desktop e o padrao; ambos os backends criam e promovem tarefa com metadados.
 // Headless pode ser escolhido explicitamente ou como default configurado.
@@ -170,12 +178,21 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
     } else if (command === "set-status") {
       // Corrige o status de uma tarefa sem vincular sessao nem tocar no cronometro.
       const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
-      const status = statusValue(config.vocabulary, option("--status"));
+      const role = option("--status");
+      const status = statusValue(config.vocabulary, role);
+      const completedDate = option("--completed-date");
       if (!taskPath) throw new Error("missing_task");
       if (!status) throw new Error("missing_or_invalid_status");
-      const api = backendFor(config, backend);
-      await api.setStatus(taskPath, status);
-      output({ ok: true, result: { taskPath, status } });
+      if (completedDate !== undefined) {
+        // Data de conclusao so existe em tarefa fechada, e so no passado ou hoje.
+        if (!["concluido", "cancelado"].includes(role)) throw new Error("completed_date_requires_closed_status");
+        if (!isPastOrTodayDate(completedDate)) throw new Error("invalid_completed_date");
+      }
+      // Com data explicita, sempre headless: a API do plugin grava a data do
+      // dia ao fechar, e o campo e escrita de frontmatter, como no fix-time.
+      const api = backendFor(config, completedDate !== undefined ? "headless" : backend);
+      await api.setStatus(taskPath, status, completedDate !== undefined ? { completedDate } : {});
+      output({ ok: true, result: { taskPath, status, ...(completedDate !== undefined ? { completedDate } : {}) } });
     } else if (command === "start" || command === "stop") {
       const taskPath = process.argv[3];
       const agent = option("--agent");
