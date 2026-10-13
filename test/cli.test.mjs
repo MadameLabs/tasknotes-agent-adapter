@@ -232,9 +232,15 @@ test("no Codex hook command carries a backslash for sh to eat", { skip: !codexHo
 test("Codex SessionStart hook runs from a new workspace path", { skip: process.platform === "win32" || !codexHooks }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-portable-hook-"));
   try {
+    await run("git", ["init", "-q"], { cwd: dir });
+    await mkdir(join(dir, "scripts"));
+    await mkdir(join(dir, ".codex"));
+    await mkdir(join(dir, "subdir"));
     await mkdir(join(dir, "bin"));
     await symlink(process.execPath, join(dir, "bin", "node"));
-    await symlink(fileURLToPath(new URL("..", cli)), join(dir, "agent-adapter"));
+    await symlink(fileURLToPath(cli), join(dir, "bin", "tasknotes-agent"));
+    await writeFile(join(dir, "scripts", "tasknotes-session-start.sh"), await readFile(sessionStartWrapper));
+    await writeFile(join(dir, ".codex", "hooks.json"), await readFile(codexHooks));
     await writeFile(join(dir, "config.agent.local.json"), JSON.stringify({
       workspace: "madamelabs-code",
       vault: "ENGENHARIA",
@@ -244,12 +250,12 @@ test("Codex SessionStart hook runs from a new workspace path", { skip: process.p
       headless: { mtnPath: "mtn" },
       stateDir: join(dir, "state"),
     }));
-    const hooks = JSON.parse(await readFile(codexHooks, "utf8"));
+    const hooks = JSON.parse(await readFile(join(dir, ".codex", "hooks.json"), "utf8"));
     const command = hooks.hooks.SessionStart[0].hooks[0].command;
     const result = spawnSync("sh", ["-c", command], {
-      cwd: dir,
+      cwd: join(dir, "subdir"),
       encoding: "utf8",
-      input: JSON.stringify({ session_id: "portable", cwd: dir }),
+      input: JSON.stringify({ session_id: "portable", cwd: join(dir, "subdir") }),
       env: { ...process.env, PATH: `${join(dir, "bin")}:${process.env.PATH}` },
     });
     assert.equal(result.status, 0, result.stderr);
@@ -286,6 +292,46 @@ test("Claude SessionEnd keeps the host event name and stops injecting the gate",
     // Nao ha mais sessao para instruir: o gate no SessionEnd era heranca de
     // compartilhar caminho de codigo com o hook-start.
     assert.equal(output.hookSpecificOutput.additionalContext, undefined);
+  });
+});
+
+test("Codex SessionEnd reports its configured event and leaves an unbound timer untouched", async () => {
+  await fixture(async ({ config, dir }) => {
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-end", "--agent", "codex", "--config", config], {
+      encoding: "utf8",
+      env: { ...process.env, LOCALAPPDATA: dir },
+      input: JSON.stringify({ hook_event_name: "SessionEnd", session_id: "codex-unbound", cwd: "C:/madamelabs-code" }),
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.hookSpecificOutput.hookEventName, "SessionEnd");
+    assert.equal(output.result.stopped, false);
+  });
+});
+
+test("Codex hook-end preserves the legacy Stop event", async () => {
+  await fixture(async ({ config, dir }) => {
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-end", "--agent", "codex", "--config", config], {
+      encoding: "utf8",
+      env: { ...process.env, LOCALAPPDATA: dir },
+      input: JSON.stringify({ hook_event_name: "Stop", session_id: "codex-legacy", cwd: "C:/madamelabs-code" }),
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.hookSpecificOutput.hookEventName, "Stop");
+    assert.equal(output.result.stopped, false);
+  });
+});
+
+test("Codex hook-end rejects an unknown host event", async () => {
+  await fixture(async ({ config, dir }) => {
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-end", "--agent", "codex", "--config", config], {
+      encoding: "utf8",
+      env: { ...process.env, LOCALAPPDATA: dir },
+      input: JSON.stringify({ hook_event_name: "Unexpected", session_id: "codex-invalid", cwd: "C:/madamelabs-code" }),
+    });
+    assert.equal(result.status, 2);
+    assert.equal(JSON.parse(result.stdout).error, "invalid_hook_event");
   });
 });
 

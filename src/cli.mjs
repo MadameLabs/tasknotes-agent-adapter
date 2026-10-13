@@ -43,6 +43,15 @@ function backendCandidates(config, primary) {
     .map((name) => ({ backend: name, api: backendFor(config, name) }));
 }
 
+function hookEventFor(command, agent, input) {
+  const expected = command === "hook-start" ? "SessionStart" : "SessionEnd";
+  const event = input?.hook_event_name ?? expected;
+  // Codex changed its configured end hook to SessionEnd. Keep Stop only for
+  // payloads from older Codex hook configurations; reject unrelated host events.
+  if (event === expected || (command === "hook-end" && agent === "codex" && event === "Stop")) return event;
+  throw new Error("invalid_hook_event");
+}
+
 function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding, workspace }) {
   // O gate imprime o comando que a pessoa (ou o agente) deve digitar, e desde
   // que o adaptador virou pacote instalado esse comando e o `bin`, nao o
@@ -92,7 +101,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
     } else if (command === "hook-start" || command === "hook-end") {
       const agent = option("--agent");
       const input = await new Promise((resolve) => { let raw = ""; process.stdin.on("data", (chunk) => raw += chunk); process.stdin.on("end", () => resolve(raw ? JSON.parse(raw.replace(/^\uFEFF/, "")) : {})); });
-      const event = command === "hook-start" ? "SessionStart" : agent === "claude" || agent === "opencode" ? "SessionEnd" : "Stop";
+      const event = hookEventFor(command, agent, input);
       const hook = parseHookPayload(agent, event, input);
       const state = await openState(config.stateDir);
       if (command === "hook-end") {
