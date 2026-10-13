@@ -6,6 +6,7 @@ import { sessionEnd } from "./domain.mjs";
 import { recoverOrphanTimer, recoverWork, startWork, stopWork } from "./domain.mjs";
 import { createTaskNotesApiBackend } from "./backends/tasknotes-api.mjs";
 import { createMtnBackend } from "./backends/mtn.mjs";
+import { statusValue } from "./vocabulary.mjs";
 
 const [command] = process.argv.slice(2);
 const configIndex = process.argv.indexOf("--config");
@@ -16,7 +17,6 @@ const option = (name, fallback = undefined) => {
 };
 const options = (name) => process.argv.flatMap((value, index) => value === name ? [process.argv[index + 1]] : []);
 const requestedBackend = option("--backend");
-const STATUSES = ["backlog", "to-do", "em-andamento", "aprovacao", "pausa", "concluido", "cancelado"];
 const BACKENDS = ["desktop", "headless"];
 const wikilink = (value) => value.startsWith("[[") ? value : `[[${value}]]`;
 
@@ -26,8 +26,8 @@ function backendFor(config, name) {
   if (!BACKENDS.includes(name)) throw new Error("invalid_backend");
   if (name === "desktop" && !config.desktop) throw new Error("missing_desktop");
   return name === "headless"
-    ? createMtnBackend({ mtnPath: config.headless.mtnPath, vaultPath: config.vaultPath, mtnArgs: config.headless.mtnArgs ?? [] })
-    : createTaskNotesApiBackend(config.desktop);
+    ? createMtnBackend({ mtnPath: config.headless.mtnPath, vaultPath: config.vaultPath, mtnArgs: config.headless.mtnArgs ?? [], vocabulary: config.vocabulary })
+    : createTaskNotesApiBackend({ ...config.desktop, vocabulary: config.vocabulary });
 }
 
 // Encerrar nao e a mesma coisa que comecar: quem para o cronometro nao escolhe
@@ -41,6 +41,15 @@ function backendCandidates(config, primary) {
     .filter((name, index, all) => all.indexOf(name) === index)
     .filter((name) => name !== "desktop" || config.desktop)
     .map((name) => ({ backend: name, api: backendFor(config, name) }));
+}
+
+function hookEventFor(command, agent, input) {
+  const expected = command === "hook-start" ? "SessionStart" : "SessionEnd";
+  const event = input?.hook_event_name ?? expected;
+  // Codex changed its configured end hook to SessionEnd. Keep Stop only for
+  // payloads from older Codex hook configurations; reject unrelated host events.
+  if (event === expected || (command === "hook-end" && agent === "codex" && event === "Stop")) return event;
+  throw new Error("invalid_hook_event");
 }
 
 function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding, workspace }) {
@@ -92,7 +101,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
     } else if (command === "hook-start" || command === "hook-end") {
       const agent = option("--agent");
       const input = await new Promise((resolve) => { let raw = ""; process.stdin.on("data", (chunk) => raw += chunk); process.stdin.on("end", () => resolve(raw ? JSON.parse(raw.replace(/^\uFEFF/, "")) : {})); });
-      const event = command === "hook-start" ? "SessionStart" : agent === "claude" || agent === "opencode" ? "SessionEnd" : "Stop";
+      const event = hookEventFor(command, agent, input);
       const hook = parseHookPayload(agent, event, input);
       const state = await openState(config.stateDir);
       if (command === "hook-end") {
@@ -160,9 +169,9 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
     } else if (command === "set-status") {
       // Corrige o status de uma tarefa sem vincular sessao nem tocar no cronometro.
       const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
-      const status = option("--status");
+      const status = statusValue(config.vocabulary, option("--status"));
       if (!taskPath) throw new Error("missing_task");
-      if (!STATUSES.includes(status)) throw new Error("missing_or_invalid_status");
+      if (!status) throw new Error("missing_or_invalid_status");
       const api = backendFor(config, backend);
       await api.setStatus(taskPath, status);
       output({ ok: true, result: { taskPath, status } });
@@ -171,14 +180,16 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       const agent = option("--agent");
       const sessionId = option("--session");
       if (!agent || !sessionId || (command === "start" && !taskPath)) throw new Error("missing_session_or_task");
-      const status = option("--status");
-      // Sem default: pausa como desfecho automatico mentia sobre tarefas terminadas.
-      if (command === "stop" && !STATUSES.includes(status)) throw new Error("missing_or_invalid_status");
+      // O agente diz o papel (`aprovacao`) e o vault grava o seu valor (`review`
+      // no ENGENHARIA). Sem default: pausa como desfecho automatico mentia
+      // sobre tarefas terminadas.
+      const status = statusValue(config.vocabulary, option("--status"));
+      if (command === "stop" && !status) throw new Error("missing_or_invalid_status");
       const state = await openState(config.stateDir);
       const sessionKey = `${agent}:${sessionId}`;
       const bound = command === "stop" ? await getBinding(state, sessionKey) : null;
       const result = command === "start"
-        ? await startWork({ state, api: backendFor(config, backend), sessionKey, vault: config.vault, taskPath, backend })
+        ? await startWork({ state, api: backendFor(config, backend), sessionKey, vault: config.vault, taskPath, backend, vocabulary: config.vocabulary })
         : await stopWork({ state, apis: backendCandidates(config, bound?.backend ?? backend), sessionKey, status });
       output({ ok: true, result });
     } else if (command === "recover") {

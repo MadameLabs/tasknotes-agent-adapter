@@ -232,9 +232,15 @@ test("no Codex hook command carries a backslash for sh to eat", { skip: !codexHo
 test("Codex SessionStart hook runs from a new workspace path", { skip: process.platform === "win32" || !codexHooks }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-portable-hook-"));
   try {
+    await run("git", ["init", "-q"], { cwd: dir });
+    await mkdir(join(dir, "scripts"));
+    await mkdir(join(dir, ".codex"));
+    await mkdir(join(dir, "subdir"));
     await mkdir(join(dir, "bin"));
     await symlink(process.execPath, join(dir, "bin", "node"));
-    await symlink(fileURLToPath(new URL("..", cli)), join(dir, "agent-adapter"));
+    await symlink(fileURLToPath(cli), join(dir, "bin", "tasknotes-agent"));
+    await writeFile(join(dir, "scripts", "tasknotes-session-start.sh"), await readFile(sessionStartWrapper));
+    await writeFile(join(dir, ".codex", "hooks.json"), await readFile(codexHooks));
     await writeFile(join(dir, "config.agent.local.json"), JSON.stringify({
       workspace: "madamelabs-code",
       vault: "ENGENHARIA",
@@ -244,12 +250,12 @@ test("Codex SessionStart hook runs from a new workspace path", { skip: process.p
       headless: { mtnPath: "mtn" },
       stateDir: join(dir, "state"),
     }));
-    const hooks = JSON.parse(await readFile(codexHooks, "utf8"));
+    const hooks = JSON.parse(await readFile(join(dir, ".codex", "hooks.json"), "utf8"));
     const command = hooks.hooks.SessionStart[0].hooks[0].command;
     const result = spawnSync("sh", ["-c", command], {
-      cwd: dir,
+      cwd: join(dir, "subdir"),
       encoding: "utf8",
-      input: JSON.stringify({ session_id: "portable", cwd: dir }),
+      input: JSON.stringify({ session_id: "portable", cwd: join(dir, "subdir") }),
       env: { ...process.env, PATH: `${join(dir, "bin")}:${process.env.PATH}` },
     });
     assert.equal(result.status, 0, result.stderr);
@@ -286,6 +292,46 @@ test("Claude SessionEnd keeps the host event name and stops injecting the gate",
     // Nao ha mais sessao para instruir: o gate no SessionEnd era heranca de
     // compartilhar caminho de codigo com o hook-start.
     assert.equal(output.hookSpecificOutput.additionalContext, undefined);
+  });
+});
+
+test("Codex SessionEnd reports its configured event and leaves an unbound timer untouched", async () => {
+  await fixture(async ({ config, dir }) => {
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-end", "--agent", "codex", "--config", config], {
+      encoding: "utf8",
+      env: { ...process.env, LOCALAPPDATA: dir },
+      input: JSON.stringify({ hook_event_name: "SessionEnd", session_id: "codex-unbound", cwd: "C:/madamelabs-code" }),
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.hookSpecificOutput.hookEventName, "SessionEnd");
+    assert.equal(output.result.stopped, false);
+  });
+});
+
+test("Codex hook-end preserves the legacy Stop event", async () => {
+  await fixture(async ({ config, dir }) => {
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-end", "--agent", "codex", "--config", config], {
+      encoding: "utf8",
+      env: { ...process.env, LOCALAPPDATA: dir },
+      input: JSON.stringify({ hook_event_name: "Stop", session_id: "codex-legacy", cwd: "C:/madamelabs-code" }),
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.hookSpecificOutput.hookEventName, "Stop");
+    assert.equal(output.result.stopped, false);
+  });
+});
+
+test("Codex hook-end rejects an unknown host event", async () => {
+  await fixture(async ({ config, dir }) => {
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-end", "--agent", "codex", "--config", config], {
+      encoding: "utf8",
+      env: { ...process.env, LOCALAPPDATA: dir },
+      input: JSON.stringify({ hook_event_name: "Unexpected", session_id: "codex-invalid", cwd: "C:/madamelabs-code" }),
+    });
+    assert.equal(result.status, 2);
+    assert.equal(JSON.parse(result.stdout).error, "invalid_hook_event");
   });
 });
 
@@ -436,6 +482,59 @@ test("promote turns an existing planning note into a task without asking for a b
     assert.match(note, /Responsavel:\s+- '?\[\[Arthur_Cardoso\]\]/);
     assert.match(note, /Marca:\s+- '?\[\[Madame_Labs\]\]/);
     assert.match(note, /Projeto:\s+- '?\[\[tasknotes-dual-vault-e-adaptador\]\]/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// O ENGENHARIA grava `assignees`, `marca`, `projects` e status em ingles desde
+// 2026-10. A nota de planejamento tem `type` proprio, e e tarefa pela tag.
+test("promote writes the vault vocabulary into a real collection", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-promote-vocab-"));
+  const vault = join(dir, "vault");
+  const config = join(dir, "config.json");
+  try {
+    assert.equal(spawnSync(process.execPath, [mtn, "init", vault], { encoding: "utf8" }).status, 0);
+    await mkdir(join(vault, "01-planejamento"));
+    await writeFile(join(vault, "01-planejamento", "Plano.md"), "---\ntype: plano\ntitle: Plano\n---\nCorpo.\n");
+    await writeFile(config, JSON.stringify({
+      workspace: "madamelabs-code",
+      vault: "ENGENHARIA",
+      vaultPath: vault,
+      defaultResponsavel: "arthur",
+      defaultBackend: "headless",
+      headless: { mtnPath: mtn },
+      stateDir: join(dir, "state"),
+      vocabulary: {
+        statuses: { "to-do": "open", "em-andamento": "in-progress", aprovacao: "review", pausa: "paused", concluido: "done", cancelado: "cancelled" },
+        fields: { responsavel: "assignees", marca: "marca", projeto: "projects" },
+      },
+    }));
+
+    const promoted = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "promote", "01-planejamento/Plano.md",
+      "--responsavel", "arthur", "--marca", "Madame_Labs", "--projeto", "projeto-x", "--config", config])).stdout);
+    assert.equal(promoted.ok, true, JSON.stringify(promoted));
+
+    const note = await (await import("node:fs/promises")).readFile(join(vault, "01-planejamento", "Plano.md"), "utf8");
+    assert.match(note, /type: plano/);
+    assert.match(note, /- task/);
+    assert.match(note, /status: backlog/);
+    assert.match(note, /assignees:\s+- '?\[\[Arthur_Cardoso\]\]/);
+    assert.match(note, /marca:\s+- '?\[\[Madame_Labs\]\]/);
+    assert.match(note, /projects:\s+- '?\[\[projeto-x\]\]/);
+    assert.doesNotMatch(note, /Responsavel|Marca:|Projeto:/);
+    assert.match(note, /Corpo\./);
+
+    const opened = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "open", "--config", config])).stdout);
+    assert.ok(opened.tasks.some((task) => task.path === "01-planejamento/Plano.md"), JSON.stringify(opened));
+
+    // Fechar pelo headless grava a data de conclusao, pelo nome do vault.
+    const closed = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "set-status", "01-planejamento/Plano.md",
+      "--status", "concluido", "--config", config])).stdout);
+    assert.equal(closed.ok, true, JSON.stringify(closed));
+    const done = await (await import("node:fs/promises")).readFile(join(vault, "01-planejamento", "Plano.md"), "utf8");
+    assert.match(done, /status: done/);
+    assert.match(done, new RegExp(`completedDate: '?${new Date().toLocaleDateString("sv-SE")}`));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

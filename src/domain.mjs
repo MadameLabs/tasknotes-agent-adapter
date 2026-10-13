@@ -1,16 +1,17 @@
+import { DEFAULT_VOCABULARY, closedStatuses } from "./vocabulary.mjs";
 import { bindSession, confirmSession, getBinding, recordDivergence, recoverLease, releaseSession } from "./state.mjs";
 
-export async function startWork({ state, api, sessionKey, vault, taskPath, backend = "desktop" }) {
+export async function startWork({ state, api, sessionKey, vault, taskPath, backend = "desktop", vocabulary = DEFAULT_VOCABULARY }) {
   const existing = await getBinding(state, sessionKey);
   if (existing?.taskPath === taskPath) return existing;
   if (existing) throw new Error("session_already_bound");
   const task = await api.getTask(taskPath);
-  if (!task || ["concluido", "cancelado"].includes(task.status)) throw new Error("task_not_open");
+  if (!task || closedStatuses(vocabulary).has(task.status)) throw new Error("task_not_open");
   const binding = { sessionKey, vault, taskPath, backend, timerIdentity: null, createdAt: new Date().toISOString(), confirmedAt: null };
   await bindSession(state, binding);
   try {
     if ((await api.getActiveTimers()).some((item) => (item.task?.id ?? item.task?.path) === taskPath)) throw new Error("unowned_active_timer");
-    await api.setStatus(taskPath, "em-andamento");
+    await api.setStatus(taskPath, vocabulary.statuses["em-andamento"]);
     // O vault pode ter o workflow `auto-start-time-tracking` do TaskNotes
     // Workflows ligado -- workflow, nao opcao do plugin: nao ha configuracao
     // para procurar, ha um arquivo em 06-tarefas/Workflows/ --, e ai e a

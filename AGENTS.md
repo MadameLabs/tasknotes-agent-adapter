@@ -1,4 +1,6 @@
-# CLAUDE.md — tasknotes-agent-adapter
+# AGENTS.md — tasknotes-agent-adapter
+
+Único arquivo de instruções do repositório: o Claude Code e o Codex leem `AGENTS.md` sozinhos. Não recriar `CLAUDE.md` — com ele na raiz, o Claude Code deixa de ler este arquivo.
 
 ## O que é
 
@@ -9,6 +11,7 @@ Este repositório nasceu de `madamelabs-code/agent-adapter` por `git subtree spl
 ## Regras que não se negociam
 
 - **`stop` exige `--status`.** Um desfecho padrão mentiria sobre o que aconteceu com a tarefa. Os sete status são `backlog`, `to-do`, `em-andamento`, `aprovacao`, `pausa`, `concluido` e `cancelado`. O `backlog` foi declarado em 2026-09-08 para dar realidade ao par de workflows `promover-backlog-ao-agendar` e `retornar-to-do-ao-backlog-ao-desagendar`, que operava sobre um status inexistente.
+- **Os sete status são papéis, não valores.** O bloco `vocabulary` do config traduz cada papel para o valor gravado naquele vault (`aprovacao` → `review` no ENGENHARIA desde 2026-10); o mesmo vale para os campos `responsavel`, `marca` e `projeto`. Nunca escrever valor ou nome de campo literal no código: usar `src/vocabulary.mjs`.
 - **Em caso de dúvida ou indisponibilidade, o cronômetro fica vivo.** Parar o timer errado é falha mais grave do que deixar timer pendente.
 - **Toda operação destrutiva é endereçada pelo caminho exato da tarefa.** Nunca existe fallback para "o primeiro timer ativo".
 - **`recover` exige o dono esperado.** Liberar lease é explícito e nunca automático.
@@ -18,7 +21,7 @@ Este repositório nasceu de `madamelabs-code/agent-adapter` por `git subtree spl
 
 `desktop` fala com a API do plugin TaskNotes; `headless` executa o `mtn`. Duas escolhas são automáticas e não obedecem a `--backend`:
 
-- `promote` usa sempre o headless. A API do plugin responde 404 para nota que ainda não tem a tag `task`, e não existe endpoint de arquivo — promover é escrita de frontmatter num arquivo que ainda não é tarefa.
+- `promote` usa sempre o headless, compondo um único `mtn update` (tag, status inicial e as três listas com os nomes do vocabulário) — o `mtn promote` do fork grava os nomes portugueses literais. A API do plugin responde 404 para nota que ainda não tem a tag `task`, e não existe endpoint de arquivo — promover é escrita de frontmatter num arquivo que ainda não é tarefa.
 - `stop` e `hook-end` começam pelo backend gravado no vínculo pelo `start` e caem para o headless quando ele não responde. A identidade do cronômetro é o `startTime` lido do vault, e o `mtn` lê o mesmo arquivo que a API do plugin: verificar por outro backend não afrouxa nada.
 - **Encerrar sessão não falha por indisponibilidade.** Obsidian fechado é condição esperada. Quando nenhum backend responde, o `hook-end` registra o cronômetro em `divergences`, solta vínculo e lease e sai com 0 — segurar a tarefa em nome de uma sessão morta era pior que o barulho. O `stop` explícito continua falhando alto, porque nele o status é um pedido que não foi atendido.
 

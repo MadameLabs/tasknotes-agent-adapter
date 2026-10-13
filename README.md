@@ -26,7 +26,18 @@ tasknotes-agent diagnose --config /caminho/do/config.agent.local.json
 
 ## Configuração
 
-Um arquivo por vault, local e fora do controle de versão, a partir de `config.agent.example.json`. O que muda entre vaults é o caminho, a porta e o token — nunca o código.
+Um arquivo por vault, local e fora do controle de versão, a partir de `config.agent.example.json`. O que muda entre vaults é o caminho, a porta, o token e o vocabulário — nunca o código.
+
+O bloco opcional `vocabulary` diz como cada papel se escreve no arquivo daquele vault. O agente sempre fala em papéis — `--status aprovacao`, `--responsavel` —, e o adaptador grava o valor do vault. Sem o bloco, vale o português (`aprovacao`, `Responsavel`, `Marca`, `Projeto`). Papel ausente no bloco herda o padrão; papel desconhecido ou dois papéis com o mesmo valor recusam o config com `invalid_vocabulary`.
+
+```json
+"vocabulary": {
+  "statuses": { "to-do": "open", "em-andamento": "in-progress", "aprovacao": "review", "pausa": "paused", "concluido": "done", "cancelado": "cancelled" },
+  "fields": { "responsavel": "assignees", "marca": "marca", "projeto": "projects" }
+}
+```
+
+`--status` aceita o papel ou o valor do próprio vault.
 
 ## Comandos
 
