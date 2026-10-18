@@ -1,4 +1,4 @@
-const AGENTES = ["claude", "codex", "opencode"];
+const AGENTES = ["claude", "codex", "opencode", "omp"];
 
 export function parseHookPayload(agent, event, input) {
   const sessionId = typeof input?.session_id === "string" ? input.session_id.trim() : "";

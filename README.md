@@ -1,6 +1,6 @@
 # tasknotes-agent-adapter
 
-Adaptador que dá a agentes de linha de comando — Claude Code, Codex, opencode — uma forma segura de abrir, cronometrar e encerrar tarefas do [TaskNotes](https://tasknotes.dev) num vault do Obsidian.
+Adaptador que dá a agentes de linha de comando — Claude Code, Codex, opencode, oh-my-pi (`omp`) — uma forma segura de abrir, cronometrar e encerrar tarefas do [TaskNotes](https://tasknotes.dev) num vault do Obsidian.
 
 Ele não reimplementa o TaskNotes. Faz só o que é específico de agente: o gate que obriga a sessão a nomear em que tarefa está trabalhando, o vínculo entre sessão de chat e tarefa, o lease que impede duas sessões de disputarem a mesma tarefa, e a identidade do cronômetro, que é o que autoriza pará-lo depois.
 

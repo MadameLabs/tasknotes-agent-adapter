@@ -23,6 +23,11 @@ test("normalizes opencode payloads", () => {
   assert.equal(hook.cwd, "C:/madamelabs-code");
 });
 
+test("normalizes oh-my-pi payloads and still rejects unknown agents", () => {
+  assert.equal(parseHookPayload("omp", "SessionStart", { session_id: "abc" }).sessionKey, "omp:abc");
+  assert.throws(() => parseHookPayload("inventado", "SessionStart", { session_id: "abc" }), /invalid_agent/);
+});
+
 test("rejects a missing or blank session id", () => {
   assert.throws(() => parseHookPayload("codex", "Stop", {}), /missing_session_id/);
   assert.throws(() => parseHookPayload("claude", "Stop", { session_id: " " }), /missing_session_id/);
