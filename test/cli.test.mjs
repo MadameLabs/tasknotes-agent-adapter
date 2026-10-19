@@ -280,21 +280,21 @@ test("uses config defaultBackend when the command omits --backend", async () => 
   });
 });
 
-test("Claude SessionEnd keeps the host event name and stops injecting the gate", async () => {
-  await fixture(async ({ config, dir }) => {
-    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-end", "--agent", "claude", "--config", config], {
-      encoding: "utf8",
-      env: { ...process.env, LOCALAPPDATA: dir },
-      input: JSON.stringify({ session_id: "abc", cwd: "C:/madamelabs-code" }),
+for (const agent of ["claude", "omp"]) {
+  test(`${agent === "claude" ? "Claude" : "omp"} SessionEnd prints no hookSpecificOutput (rejected by Claude Code)`, async () => {
+    await fixture(async ({ config, dir }) => {
+      const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-end", "--agent", agent, "--config", config], {
+        encoding: "utf8",
+        env: { ...process.env, LOCALAPPDATA: dir },
+        input: JSON.stringify({ session_id: "abc", cwd: "C:/madamelabs-code" }),
+      });
+      assert.equal(result.status, 0);
+      const output = JSON.parse(result.stdout);
+      assert.equal(output.hookSpecificOutput, undefined);
+      assert.equal(output.ok, true);
     });
-    assert.equal(result.status, 0);
-    const output = JSON.parse(result.stdout);
-    assert.equal(output.hookSpecificOutput.hookEventName, "SessionEnd");
-    // Nao ha mais sessao para instruir: o gate no SessionEnd era heranca de
-    // compartilhar caminho de codigo com o hook-start.
-    assert.equal(output.hookSpecificOutput.additionalContext, undefined);
   });
-});
+}
 
 test("Codex SessionEnd reports its configured event and leaves an unbound timer untouched", async () => {
   await fixture(async ({ config, dir }) => {
@@ -401,7 +401,7 @@ test("opencode SessionEnd stops a bound timer through the bound backend", async 
     assert.equal(result.code, 0, result.stderr);
     const output = JSON.parse(result.stdout);
     assert.equal(output.ok, true);
-    assert.equal(output.hookSpecificOutput.hookEventName, "SessionEnd");
+    assert.equal(output.hookSpecificOutput, undefined);
     assert.equal(calls.some((call) => call.url.endsWith("/time/stop")), true);
     assert.deepEqual(timers, []);
   });

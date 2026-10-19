@@ -118,10 +118,10 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
         const result = bound
           ? await sessionEnd({ state, apis: backendCandidates(config, bound.backend ?? backend), sessionKey: hook.sessionKey })
           : { ok: true, stopped: false };
-        // SessionEnd nao instrui ninguem: nao ha mais sessao para ler o gate. O
-        // texto so vinha junto por o hook-end compartilhar caminho de codigo
-        // com o hook-start.
-        output({ ok: true, hookSpecificOutput: { hookEventName: hook.event }, result });
+        // SessionEnd nao instrui ninguem: nao ha mais sessao para ler o gate.
+        // Claude Code rejeita hookSpecificOutput no SessionEnd ("Hook JSON
+        // output validation failed"); so o Codex exige hookEventName.
+        output(agent === "codex" ? { ok: true, hookSpecificOutput: { hookEventName: hook.event }, result } : { ok: true, result });
       } else {
         const binding = await getBinding(state, hook.sessionKey);
         const additionalContext = gateContext({ agent, configPath: process.argv[configIndex + 1], defaultResponsavel: config.defaultResponsavel, sessionId: hook.sessionId, binding, workspace: config.workspace });
