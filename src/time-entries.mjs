@@ -39,6 +39,36 @@ export function retimeEntries(entries, { startTime, newStart, newEnd }) {
   return { entries: list.map((entry, other) => other === index ? updated : entry), previous, updated };
 }
 
+// "3h", "90m", "1h30m": duracao do trabalho real, contada a partir do inicio.
+export function parseDuration(value) {
+  const match = /^(?:(\d+(?:\.\d+)?)h)?(?:(\d+)m)?$/.exec(value ?? "");
+  const ms = match && (value ?? "") !== "" ? (Number(match[1] ?? 0) * 60 + Number(match[2] ?? 0)) * 60000 : 0;
+  if (!(ms > 0)) throw new Error("invalid_duration");
+  return ms;
+}
+
+// Fecha a unica entrada aberta da tarefa num horario passado. Mais de uma
+// aberta nao se resolve por palpite: o adaptador recusa e a pessoa decide.
+export function closeOpenEntry(entries, { end, duration, now = new Date() }) {
+  if ((end === undefined) === (duration === undefined)) throw new Error("end_or_duration_required");
+  const list = Array.isArray(entries) ? entries : [];
+  const open = list.filter((entry) => !entry.endTime);
+  if (!open.length) throw new Error("no_open_time_entry");
+  if (open.length > 1) throw new Error("multiple_open_time_entries");
+  const previous = open[0];
+  const start = instant(previous.startTime, "invalid_entry_start");
+  const finish = end !== undefined ? instant(end, "invalid_end") : new Date(start.getTime() + parseDuration(duration));
+  if (finish <= start) throw new Error("end_not_after_start");
+  if (finish > now) throw new Error("end_in_future");
+  const updated = { ...previous, endTime: finish.toISOString() };
+  // Duracao gravada pelo plugin deixaria de bater com o intervalo novo.
+  delete updated.duration;
+  const overlaps = list.some((entry) => entry !== previous && entry.endTime
+    && new Date(entry.startTime) < finish && new Date(entry.endTime) > start);
+  if (overlaps) throw new Error("time_entry_overlap");
+  return { entries: list.map((entry) => entry === previous ? updated : entry), previous, updated };
+}
+
 // Onde cada agente guarda o transcript da sessao. O que conta como atividade e
 // mensagem ou chamada de ferramenta: resumo de ausencia, troca de configuracao
 // ao retomar e custo da sessao sao gravados sem ninguem trabalhar, e foi um

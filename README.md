@@ -55,6 +55,7 @@ diagnose [--timers]      mostra vínculos, leases e divergências; --timers list
 recover "CAMINHO.md"     libera vínculo de sessão morta
 suggest-end              última atividade real no transcript de uma sessão (só lê)
 fix-time "CAMINHO.md"    corrige início ou fim de uma entrada de tempo já fechada
+close-timer "CAMINHO.md" fecha a entrada aberta num horário passado (--end ISO ou --duration 3h), sem depender da sessão
 block "CAMINHO.md" --by "OUTRA.md"    marca que a tarefa depende de outra; repetir --by para mais de uma
 unblock "CAMINHO.md" --by "OUTRA.md"  tira a dependência
 hook-start / hook-end    entrypoints dos hooks de sessão
@@ -75,6 +76,8 @@ tasknotes-agent fix-time "06-tarefas/Tarefa.md" --entry <startTime da entrada> -
 O `suggest-end` só lê: devolve o transcript e o horário da última mensagem ou chamada de ferramenta da sessão (Claude em `~/.claude/projects`, Codex em `~/.codex/sessions`). Resumo de ausência, troca de configuração e custo não contam como atividade. Se a sessão continuou em outra tarefa depois, a última atividade não é o fim desta tarefa: confira antes de usar.
 
 O `fix-time` endereça a entrada pelo `startTime` gravado, nunca pela posição. Ele usa sempre o headless, porque a API do plugin não edita entrada de tempo, e recusa entrada ainda aberta (`time_entry_still_open`), entrada ainda presa a uma sessão viva (`time_entry_bound_to_session`), fim antes do início, horário no futuro e sobreposição com outra entrada da tarefa. `--reason` é obrigatório. A resposta traz a entrada anterior e a nova, para ficar registrada no corpo da tarefa.
+
+O `close-timer` cobre o caso em que a sessão dona morreu e não há mais `stop` a dar: `tasknotes-agent close-timer "06-tarefas/Tarefa.md" --end <ISO> | --duration 3h [--status pausa] [--agent A --session S | --force-owner] --config …`. Exige exatamente uma entrada aberta (`no_open_time_entry`, `multiple_open_time_entries`), fim posterior ao início e não futuro, e sem sobreposição. Se a tarefa tem vínculo de sessão, só libera vínculo e lease com `--agent`/`--session` do dono ou `--force-owner` (`task_bound_to_session`); a entrada só é gravada depois dessa checagem. `--status` é opcional e vem do vocabulário. Usa sempre o headless e grava a entrada pela biblioteca do `mtn`, então não depende de flag nova no fork.
 
 ### Dependências
 

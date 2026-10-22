@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { loadConfig, resolveResponsavel } from "./config.mjs";
 import { parseHookPayload } from "./hooks.mjs";
-import { diagnoseState, getBinding, openState, recoverLease } from "./state.mjs";
+import { diagnoseState, getBinding, openState, recoverLease, releaseSession } from "./state.mjs";
 import { sessionEnd } from "./domain.mjs";
 import { recoverOrphanTimer, recoverWork, startWork, stopWork } from "./domain.mjs";
 import { createTaskNotesApiBackend } from "./backends/tasknotes-api.mjs";
@@ -104,7 +104,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
   }
   if (config) try {
     const backend = requestedBackend ?? config.defaultBackend ?? "desktop";
-    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "suggest-end", "block", "unblock"].includes(command)) {
+    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "close-timer", "suggest-end", "block", "unblock"].includes(command)) {
       output({ ok: false, error: "unknown_command", message: "unsupported command" });
       process.exitCode = 2;
     } else if (command === "hook-start" || command === "hook-end") {
@@ -252,6 +252,32 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       }
       const result = await backendFor(config, "headless").retimeEntry(taskPath, { startTime, newStart: option("--start"), newEnd: option("--end") });
       output({ ok: true, result: { taskPath, reason, ...result } });
+    } else if (command === "close-timer") {
+      // Fecha a entrada aberta num horario passado, sem depender de vinculo de
+      // sessao: o caso e a sessao que morreu sem `stop`. Sempre headless, como o
+      // fix-time -- o mtn le o mesmo arquivo que o plugin e o `timer stop` dele
+      // so fecha agora. Tudo e validado antes de escrever; vinculo e lease so
+      // saem depois que a entrada foi fechada.
+      const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
+      const end = option("--end");
+      const duration = option("--duration");
+      const rawStatus = option("--status");
+      const status = rawStatus === undefined ? undefined : statusValue(config.vocabulary, rawStatus);
+      if (!taskPath) throw new Error("missing_task");
+      if ((end === undefined) === (duration === undefined)) throw new Error("end_or_duration_required");
+      if (rawStatus !== undefined && !status) throw new Error("missing_or_invalid_status");
+      const state = await openState(config.stateDir);
+      const bound = (await diagnoseState(state)).bindings.find((binding) => binding.vault === config.vault && binding.taskPath === taskPath);
+      const agent = option("--agent");
+      const sessionId = option("--session");
+      const forced = process.argv.includes("--force-owner");
+      // Mesma regra do recover: liberar o vinculo de outra sessao e explicito.
+      if (bound && !forced && bound.sessionKey !== `${agent}:${sessionId}`) throw new Error("task_bound_to_session");
+      const api = backendFor(config, "headless");
+      const closedEntry = await api.closeEntry(taskPath, { end, duration });
+      if (status) await api.setStatus(taskPath, status);
+      if (bound) await releaseSession(state, bound.sessionKey);
+      output({ ok: true, result: { taskPath, ...closedEntry, ...(status ? { status } : {}), released: bound?.sessionKey ?? null } });
     } else if (command === "suggest-end") {
       // So le: aponta a ultima atividade real no transcript da sessao dona,
       // para o agente mostrar a fonte antes de corrigir com fix-time.

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_VOCABULARY, closedStatuses } from "../vocabulary.mjs";
 import { bundledMtnPath } from "../mtn-path.mjs";
-import { retimeEntries } from "../time-entries.mjs";
+import { closeOpenEntry, retimeEntries } from "../time-entries.mjs";
 import { addBlockers, removeBlockers } from "../dependencies.mjs";
 
 const run = promisify(execFile);
@@ -144,6 +144,22 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
         if (read.error) throw new Error(`mtn_failed:${read.error.message}`);
         const frontmatter = normalizeFrontmatter(read.frontmatter, mapping);
         const result = retimeEntries(frontmatter.timeEntries, change);
+        const fields = denormalizeFrontmatter({ timeEntries: result.entries, dateModified: new Date().toISOString() }, mapping);
+        const written = await collection.update({ path, fields });
+        if (written.error) throw new Error(`mtn_failed:${written.error.message}`);
+        return { previous: result.previous, updated: result.updated };
+      }, vaultPath);
+    },
+    // Fechar a entrada aberta num horario passado: o `timer stop` do mtn so
+    // fecha agora. Mesma biblioteca do retimeEntry, sem depender de flag nova
+    // no fork.
+    async closeEntry(path, change) {
+      const { withCollection, normalizeFrontmatter, denormalizeFrontmatter } = await loadLibrary();
+      return withCollection(async (collection, mapping) => {
+        const read = await collection.read(path);
+        if (read.error) throw new Error(`mtn_failed:${read.error.message}`);
+        const frontmatter = normalizeFrontmatter(read.frontmatter, mapping);
+        const result = closeOpenEntry(frontmatter.timeEntries, change);
         const fields = denormalizeFrontmatter({ timeEntries: result.entries, dateModified: new Date().toISOString() }, mapping);
         const written = await collection.update({ path, fields });
         if (written.error) throw new Error(`mtn_failed:${written.error.message}`);
