@@ -10,6 +10,8 @@ concurrency:
 
 jobs:
   review:
+    # PR de fork nao recebe o segredo e falharia; so revisa branch do proprio repo.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

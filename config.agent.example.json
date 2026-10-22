@@ -1,7 +1,7 @@
 {
-  "workspace": "madamelabs-code",
+  "workspace": "dev",
   "vault": "ENGENHARIA",
-  "vaultPath": "/CAMINHO/ABSOLUTO/madamelabs-code/ENGENHARIA",
+  "vaultPath": "/CAMINHO/ABSOLUTO/dev/ENGENHARIA",
   "defaultResponsavel": "arthur",
   "defaultBackend": "desktop",
   "desktop": {

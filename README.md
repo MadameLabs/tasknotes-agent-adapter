@@ -28,6 +28,8 @@ tasknotes-agent diagnose --config /caminho/do/config.agent.local.json
 
 Um arquivo por vault, local e fora do controle de versão, a partir de `config.agent.example.json`. O que muda entre vaults é o caminho, a porta, o token e o vocabulário — nunca o código.
 
+`defaultResponsavel` e `--responsavel` aceitam um apelido ou o nome da nota-âncora da pessoa; a lista fica em `src/config.mjs`.
+
 O bloco opcional `vocabulary` diz como cada papel se escreve no arquivo daquele vault. O agente sempre fala em papéis — `--status aprovacao`, `--responsavel` —, e o adaptador grava o valor do vault. Sem o bloco, vale o português (`aprovacao`, `Responsavel`, `Marca`, `Projeto`). Papel ausente no bloco herda o padrão; papel desconhecido ou dois papéis com o mesmo valor recusam o config com `invalid_vocabulary`.
 
 ```json
@@ -87,3 +89,7 @@ npm test
 ```
 
 A suíte sobe um servidor HTTP falso para o backend desktop e usa o `mtn` de verdade para o headless.
+
+## Licença
+
+MIT. Ver `LICENSE`.
