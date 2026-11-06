@@ -35,6 +35,15 @@ export function resolveResponsavel(value) {
   return [...RESPONSAVEIS.values()].some((lista) => lista.length === 1 && lista[0] === raw) ? [raw] : null;
 }
 
+function defaultResponsavelValido(value) {
+  try {
+    return Boolean(resolveResponsavel(value));
+  } catch (error) {
+    if (String(error?.message).startsWith("responsavel_antigo")) return true;
+    throw error;
+  }
+}
+
 function requiredString(config, key) {
   if (typeof config[key] !== "string" || !config[key].trim()) {
     throw new Error(`missing_${key}`);
@@ -58,8 +67,10 @@ export async function loadConfig(path) {
     throw new Error("invalid_defaultBackend");
   }
   // Valida, mas guarda o apelido: o texto do gate do SessionStart mostra
-  // `--responsavel arthur`, que o create resolve de novo na hora.
-  if (!resolveResponsavel(config.defaultResponsavel)) throw new Error("invalid_defaultResponsavel");
+  // `--responsavel arthur`, que o create resolve de novo na hora. Nome de marca
+  // (config de antes da T8) carrega: derrubar o config inteiro impediria o stop
+  // de fechar o cronometro; o create e o promote recusam e dizem o apelido.
+  if (!defaultResponsavelValido(config.defaultResponsavel)) throw new Error("invalid_defaultResponsavel");
   // Maquina sem Obsidian nao tem API do plugin: com default headless o bloco
   // desktop e opcional, e pedir --backend desktop sem ele falha no cli com
   // missing_desktop. Quando o bloco existe, continua validado por inteiro.

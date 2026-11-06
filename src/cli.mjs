@@ -98,8 +98,10 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
   let config;
   try {
     config = await loadConfig(process.argv[configIndex + 1]);
-  } catch {
-    output({ ok: false, error: "config_invalid", message: "configuration could not be loaded" });
+  } catch (error) {
+    // A causa (`missing_vaultPath`, `invalid_defaultResponsavel`...) e a unica
+    // pista do que corrigir no config; a frase fixa a escondia.
+    output({ ok: false, error: "config_invalid", message: `configuration could not be loaded: ${error?.message ?? "unknown"}` });
     process.exitCode = 1;
   }
   if (config) try {

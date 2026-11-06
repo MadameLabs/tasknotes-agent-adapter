@@ -49,9 +49,12 @@ test("rejects a configuration without vaultPath", async () => {
   await withConfig(invalid, (path) => assert.rejects(loadConfig(path), /missing_vaultPath/));
 });
 
-test("rejects a brand name as default responsavel, naming the alias", async () => {
-  await withConfig({ ...validConfig, defaultResponsavel: "Arthur_Cardoso" }, (path) =>
-    assert.rejects(loadConfig(path), /responsavel_antigo: use arthur \(Arthur Cardoso\)/),
+// Config velho com nome de marca nao pode derrubar o adaptador inteiro: o stop
+// precisa fechar o cronometro e o gate precisa abrir. Quem recusa e o create e o
+// promote, na hora de gravar, com o apelido certo na mensagem.
+test("a brand name as default responsavel still loads", async () => {
+  await withConfig({ ...validConfig, defaultResponsavel: "Arthur_Cardoso" }, async (path) =>
+    assert.equal((await loadConfig(path)).defaultResponsavel, "Arthur_Cardoso"),
   );
 });
 

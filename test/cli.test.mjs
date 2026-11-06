@@ -800,6 +800,37 @@ test("recover refuses without an explicit task and session", async () => {
   });
 });
 
+test("an old brand name in the config only blocks writing, and says the alias", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-old-config-"));
+  try {
+    const configPath = join(dir, "config.json");
+    await writeFile(configPath, JSON.stringify({
+      workspace: "teste", vault: "V", vaultPath: dir, defaultResponsavel: "Madame_Carmen",
+      defaultBackend: "headless", stateDir: join(dir, "state"),
+    }));
+    const gate = spawnSync(process.execPath, [fileURLToPath(cli), "hook-start", "--agent", "claude", "--config", configPath],
+      { encoding: "utf8", timeout: 20000, input: JSON.stringify({ session_id: "abc", cwd: dir }) });
+    assert.equal(gate.status, 0, gate.stdout);
+    const created = spawnSync(process.execPath, [fileURLToPath(cli), "create", "Nova", "--marca", "Madame_Labs",
+      "--projeto", "CRM", "--config", configPath], { encoding: "utf8", timeout: 20000 });
+    const answer = JSON.parse(created.stdout);
+    assert.equal(answer.error, "responsavel_antigo");
+    assert.equal(answer.message, "use mayara (Mayara Almeida)");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("an invalid config says why", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "tasknotes-agent-bad-config-"));
+  try {
+    const configPath = join(dir, "config.json");
+    await writeFile(configPath, JSON.stringify({ workspace: "teste", vault: "V", vaultPath: dir, defaultResponsavel: "ninguem", defaultBackend: "headless" }));
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "diagnose", "--config", configPath], { encoding: "utf8", timeout: 20000 });
+    const answer = JSON.parse(result.stdout);
+    assert.equal(answer.error, "config_invalid");
+    assert.match(answer.message, /invalid_defaultResponsavel/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test("reset is not a real command and must not answer ok", async () => {
   await fixture(async ({ config }) => {
     const result = spawnSync(process.execPath, [fileURLToPath(cli), "reset", "--config", config], { encoding: "utf8" });
