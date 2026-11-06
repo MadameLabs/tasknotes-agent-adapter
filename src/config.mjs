@@ -4,20 +4,35 @@ import { resolveVocabulary } from "./vocabulary.mjs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// Slug aceito na linha de comando -> nome da nota-ancora em ENGENHARIA/00-conhecimento/,
-// para que Responsavel grave um wikilink que resolve de verdade.
+// Apelido aceito na linha de comando -> pessoas em BIBLIOTECA/11-pessoas/, para
+// que `assignees` grave wikilinks que resolvem de verdade. Responsavel e pessoa,
+// nao marca (T8 do projeto base unica, 2026-11): `labs` sao os dois socios.
 const RESPONSAVEIS = new Map([
-  ["arthur", "Arthur_Cardoso"],
-  ["mayara", "Madame_Carmen"],
-  ["labs", "Madame_Labs"],
-  ["misslabs", "Miss. Labs"],
+  ["arthur", ["Arthur Cardoso"]],
+  ["mayara", ["Mayara Almeida"]],
+  ["labs", ["Arthur Cardoso", "Mayara Almeida"]],
+  ["misslabs", ["Miss. Labs"]],
+]);
+
+// Nomes de marca que ja fizeram papel de responsavel. Config velho ou habito
+// gravaria a marca de novo; falhar as claras, dizendo o apelido certo, e o que
+// impede uma maquina atrasada de desfazer o corte sem ninguem perceber.
+const ANTIGOS = new Map([
+  ["Arthur_Cardoso", "arthur"],
+  ["Madame_Carmen", "mayara"],
+  ["Madame_Labs", "labs"],
 ]);
 
 export function resolveResponsavel(value) {
   if (typeof value !== "string") return null;
   const raw = value.trim().replace(/^\[\[|\]\]$/g, "");
-  return RESPONSAVEIS.get(raw.toLowerCase())
-    ?? ([...RESPONSAVEIS.values()].includes(raw) ? raw : null);
+  if (ANTIGOS.has(raw)) {
+    const apelido = ANTIGOS.get(raw);
+    throw new Error(`responsavel_antigo: use ${apelido} (${RESPONSAVEIS.get(apelido).join(", ")})`);
+  }
+  const pessoas = RESPONSAVEIS.get(raw.toLowerCase());
+  if (pessoas) return [...pessoas];
+  return [...RESPONSAVEIS.values()].some((lista) => lista.length === 1 && lista[0] === raw) ? [raw] : null;
 }
 
 function requiredString(config, key) {
@@ -42,9 +57,9 @@ export async function loadConfig(path) {
   if (config.defaultBackend !== undefined && !["desktop", "headless"].includes(config.defaultBackend)) {
     throw new Error("invalid_defaultBackend");
   }
-  const defaultResponsavel = resolveResponsavel(config.defaultResponsavel);
-  if (!defaultResponsavel) throw new Error("invalid_defaultResponsavel");
-  config.defaultResponsavel = defaultResponsavel;
+  // Valida, mas guarda o apelido: o texto do gate do SessionStart mostra
+  // `--responsavel arthur`, que o create resolve de novo na hora.
+  if (!resolveResponsavel(config.defaultResponsavel)) throw new Error("invalid_defaultResponsavel");
   // Maquina sem Obsidian nao tem API do plugin: com default headless o bloco
   // desktop e opcional, e pedir --backend desktop sem ele falha no cli com
   // missing_desktop. Quando o bloco existe, continua validado por inteiro.

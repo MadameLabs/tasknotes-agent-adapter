@@ -144,7 +144,7 @@ test("creates a task headless: mtn create, promote with metadata, initial status
   try {
     const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault" });
     const before = process.env.OUT; process.env.OUT = output;
-    const task = await backend.createTask({ title: "Revisar hooks", responsavel: "Arthur_Cardoso", marcas: ["Madame_Labs"], projeto: "tasknotes-dual-vault-e-adaptador" });
+    const task = await backend.createTask({ title: "Revisar hooks", responsavel: ["Arthur Cardoso"], marcas: ["Madame_Labs"], projeto: "tasknotes-dual-vault-e-adaptador" });
     process.env.OUT = before;
     const calls = (await readFile(output, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
     assert.deepEqual(calls[0], ["create", "Revisar hooks", "--path", "C:/vault"]);
@@ -152,7 +152,7 @@ test("creates a task headless: mtn create, promote with metadata, initial status
       "update", "06-tarefas/Revisar hooks.md",
       "--add-tag", "task", "--status", "backlog",
       // Wikilink como no backend desktop: sem colchetes o vault grava texto solto.
-      "--set-new-list", "Responsavel=[[Arthur_Cardoso]]", "--set-new-list", "Marca=[[Madame_Labs]]", "--set-new-list", "Projeto=[[tasknotes-dual-vault-e-adaptador]]",
+      "--set-new-list", "Responsavel=[[Arthur Cardoso]]", "--set-new-list", "Marca=[[Madame_Labs]]", "--set-new-list", "Projeto=[[tasknotes-dual-vault-e-adaptador]]",
       "--path", "C:/vault",
     ]);
     assert.equal(task.path, "06-tarefas/Revisar hooks.md");
@@ -176,7 +176,7 @@ test("promotes with the vault vocabulary through one mtn update", async () => {
   try {
     const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault", vocabulary: ENGLISH });
     const before = process.env.OUT; process.env.OUT = output;
-    await backend.promoteTask("01-planejamento/Plano.md", { responsavel: "[[Arthur_Cardoso]]", marca: "[[Madame_Labs]]", projeto: "[[projeto-x]]" });
+    await backend.promoteTask("01-planejamento/Plano.md", { responsavel: ["[[Arthur Cardoso]]"], marca: "[[Madame_Labs]]", projeto: "[[projeto-x]]" });
     await backend.setProjects("01-planejamento/Plano.md", ["projeto-y"]);
     process.env.OUT = before;
     const calls = (await readFile(output, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
@@ -184,7 +184,7 @@ test("promotes with the vault vocabulary through one mtn update", async () => {
       "update", "01-planejamento/Plano.md",
       "--add-tag", "task",
       "--status", "backlog",
-      "--set-new-list", "assignees=[[Arthur_Cardoso]]",
+      "--set-new-list", "assignees=[[Arthur Cardoso]]",
       "--set-new-list", "marca=[[Madame_Labs]]",
       "--set-new-list", "projects=[[projeto-x]]",
       "--path", "C:/vault",
@@ -239,5 +239,31 @@ test("closing a task headless with an explicit date records that date", async ()
     process.env.OUT = before;
     const calls = (await readFile(output, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
     assert.deepEqual(calls[0], ["update", "a.md", "--status", "done", "--set-new", "completedDate=2026-01-15", "--path", "C:/vault"]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+// `labs` sao os dois socios: uma flag `--set-new-list` por pessoa, porque a
+// primeira monta a lista do zero e as seguintes acumulam.
+test("mtn promote writes one wikilink per person", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-labs-"));
+  const output = join(dir, "calls.jsonl");
+  const script = join(dir, "fake.mjs");
+  await writeFile(script, `import { appendFileSync } from 'node:fs'; appendFileSync(process.env.OUT, JSON.stringify(process.argv.slice(2)) + '\\n');`);
+  try {
+    const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault", vocabulary: ENGLISH });
+    const before = process.env.OUT; process.env.OUT = output;
+    await backend.promoteTask("01-planejamento/Plano.md", { responsavel: ["[[Arthur Cardoso]]", "[[Mayara Almeida]]"], marca: "[[Madame_Labs]]", projeto: "[[projeto-x]]" });
+    process.env.OUT = before;
+    const calls = (await readFile(output, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    assert.deepEqual(calls[0], [
+      "update", "01-planejamento/Plano.md",
+      "--add-tag", "task",
+      "--status", "backlog",
+      "--set-new-list", "assignees=[[Arthur Cardoso]]",
+      "--set-new-list", "assignees=[[Mayara Almeida]]",
+      "--set-new-list", "marca=[[Madame_Labs]]",
+      "--set-new-list", "projects=[[projeto-x]]",
+      "--path", "C:/vault",
+    ]);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

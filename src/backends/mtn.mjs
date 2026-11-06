@@ -66,7 +66,7 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
     "update", path,
     "--add-tag", "task",
     "--status", initialStatus,
-    "--set-new-list", `${fields.responsavel}=${responsavel}`,
+    ...[responsavel].flat().flatMap((pessoa) => ["--set-new-list", `${fields.responsavel}=${pessoa}`]),
     "--set-new-list", `${fields.marca}=${marca}`,
     "--set-new-list", `${fields.projeto}=${projeto}`,
   ]);
@@ -118,7 +118,7 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
       const printed = (await invoke(["create", title])).replace(/\[[0-9;]*m/g, "");
       const path = printed.split(/[\r\n]+/).map((line) => line.trim()).find((line) => line.startsWith("→"))?.replace(/^→\s*/, "");
       if (!path) throw new Error("mtn_failed:create_path_not_printed");
-      await promote(path, { responsavel: wikilink(responsavel), marca: wikilink(marcas[0]), projeto: wikilink(projeto) });
+      await promote(path, { responsavel: [responsavel].flat().map(wikilink), marca: wikilink(marcas[0]), projeto: wikilink(projeto) });
       const task = await findTask(path);
       if (!task) throw new Error("task_not_verified");
       return task;

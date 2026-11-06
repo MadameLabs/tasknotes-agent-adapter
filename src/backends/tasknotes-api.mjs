@@ -38,7 +38,7 @@ export function createTaskNotesApiBackend({ baseUrl, authToken, vocabulary = DEF
       const path = created.id ?? created.path;
       if (input.responsavel || input.marcas?.length) {
         const patch = {};
-        if (input.responsavel) patch[fields.responsavel] = [wikilink(input.responsavel)];
+        if (input.responsavel) patch[fields.responsavel] = [input.responsavel].flat().map(wikilink);
         if (input.marcas?.length) patch[fields.marca] = input.marcas.map(wikilink);
         await request(taskUrl(path), { method: "PUT", body: JSON.stringify(patch) });
         // O POST responde antes do PUT, e nesse retrato Responsavel ainda

@@ -163,7 +163,7 @@ if (configIndex === -1 || !process.argv[configIndex + 1]) {
       // `unsupported_backend` e a promocao so funcionava com --backend headless.
       const api = backendFor(config, "headless");
       await api.promoteTask(taskPath, {
-        responsavel: wikilink(responsavel),
+        responsavel: responsavel.map(wikilink),
         marca: wikilink(marca),
         projeto: wikilink(projeto),
       });

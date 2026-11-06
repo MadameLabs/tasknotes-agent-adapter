@@ -30,9 +30,9 @@ test("paginates open tasks and creates fields through the documented two-step wr
   await withServer(async ({ baseUrl, calls }) => {
     const api = createTaskNotesApiBackend({ baseUrl, authToken: "token" });
     assert.deepEqual((await api.listOpen()).map((task) => task.id), ["a"]);
-    await api.createTask({ title: "Nova", responsavel: "Arthur_Cardoso", marcas: ["Madame_Labs"], projeto: "Projeto" });
+    await api.createTask({ title: "Nova", responsavel: ["Arthur Cardoso"], marcas: ["Madame_Labs"], projeto: "Projeto" });
     assert.deepEqual(calls.find((call) => call.method === "POST").body.projects, ["[[Projeto]]"]);
-    assert.deepEqual(calls.find((call) => call.method === "PUT").body, { Responsavel: ["[[Arthur_Cardoso]]"], Marca: ["[[Madame_Labs]]"] });
+    assert.deepEqual(calls.find((call) => call.method === "PUT").body, { Responsavel: ["[[Arthur Cardoso]]"], Marca: ["[[Madame_Labs]]"] });
   });
 });
 
@@ -43,7 +43,7 @@ test("paginates open tasks and creates fields through the documented two-step wr
 test("createTask reports the task read back after the update, not the POST snapshot", async () => {
   await withServer(async ({ baseUrl }) => {
     const api = createTaskNotesApiBackend({ baseUrl, authToken: "token" });
-    const task = await api.createTask({ title: "Nova", responsavel: "Arthur_Cardoso", marcas: ["Madame_Labs"], projeto: "Projeto" });
+    const task = await api.createTask({ title: "Nova", responsavel: ["Arthur Cardoso"], marcas: ["Madame_Labs"], projeto: "Projeto" });
     assert.deepEqual(task.Responsavel, ["[[Arthur_Cardoso]]"]);
     assert.deepEqual(task.Marca, ["[[Madame_Labs]]"]);
     assert.equal(task.path, "new task.md");
@@ -75,8 +75,16 @@ test("desktop writes owner, brand and initial status with the vault vocabulary",
       fields: { responsavel: "assignees", marca: "marca", projeto: "projects" },
     };
     const api = createTaskNotesApiBackend({ baseUrl, authToken: "token", vocabulary });
-    await api.createTask({ title: "Nova", responsavel: "Arthur_Cardoso", marcas: ["Madame_Labs"], projeto: "Projeto" });
+    await api.createTask({ title: "Nova", responsavel: ["Arthur Cardoso"], marcas: ["Madame_Labs"], projeto: "Projeto" });
     assert.equal(calls.find((call) => call.method === "POST").body.status, "backlog");
-    assert.deepEqual(calls.find((call) => call.method === "PUT").body, { assignees: ["[[Arthur_Cardoso]]"], marca: ["[[Madame_Labs]]"] });
+    assert.deepEqual(calls.find((call) => call.method === "PUT").body, { assignees: ["[[Arthur Cardoso]]"], marca: ["[[Madame_Labs]]"] });
+  });
+});
+
+test("api createTask writes one wikilink per person", async () => {
+  await withServer(async ({ baseUrl, calls }) => {
+    const api = createTaskNotesApiBackend({ baseUrl, authToken: "token" });
+    await api.createTask({ title: "Nova", responsavel: ["Arthur Cardoso", "Mayara Almeida"], marcas: ["Madame_Labs"], projeto: "Projeto" });
+    assert.deepEqual(calls.find((call) => call.method === "PUT").body.Responsavel, ["[[Arthur Cardoso]]", "[[Mayara Almeida]]"]);
   });
 });

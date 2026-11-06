@@ -425,6 +425,31 @@ test("Claude wrapper forwards the raw hook payload to the Node adapter", { skip:
   }
 });
 
+test("defaultResponsavel keeps the alias in the gate text", async () => {
+  await fixture(async ({ config, dir }) => {
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "hook-start", "--agent", "claude", "--config", config], {
+      encoding: "utf8",
+      env: { ...process.env, LOCALAPPDATA: dir },
+      input: JSON.stringify({ session_id: "abc", cwd: "C:/madamelabs-code" }),
+    });
+    const context = JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
+    assert.match(context, /--responsavel arthur /);
+    assert.doesNotMatch(context, /Arthur_Cardoso|Arthur Cardoso/);
+  });
+});
+
+test("create refuses a brand name as responsavel and writes nothing", async () => {
+  await fixture(async ({ config, dir, calls }) => {
+    const result = spawnSync(process.execPath, [fileURLToPath(cli), "create", "Nova", "--responsavel", "Madame_Carmen",
+      "--marca", "Madame_Labs", "--projeto", "CRM", "--config", config], { encoding: "utf8", timeout: 20000, env: { ...process.env, LOCALAPPDATA: dir } });
+    assert.notEqual(result.status, 0);
+    const answer = JSON.parse(result.stdout);
+    assert.equal(answer.error, "responsavel_antigo");
+    assert.equal(answer.message, "use mayara (Mayara Almeida)");
+    assert.equal(calls.filter((call) => call.method !== "GET").length, 0);
+  });
+});
+
 test("open and create execute against the TaskNotes API", async () => {
   await fixture(async ({ config, calls }) => {
     const opened = JSON.parse((await run(process.execPath, [fileURLToPath(cli), "open", "--config", config])).stdout);
@@ -435,7 +460,7 @@ test("open and create execute against the TaskNotes API", async () => {
     ])).stdout);
     assert.equal(created.task.path, "06-tarefas/Nova.md");
     assert.deepEqual(calls.find((call) => call.method === "POST").body.projects, ["[[CRM]]"]);
-    assert.deepEqual(calls.find((call) => call.method === "PUT").body, { Responsavel: ["[[Arthur_Cardoso]]"], Marca: ["[[Madame_Labs]]"] });
+    assert.deepEqual(calls.find((call) => call.method === "PUT").body, { Responsavel: ["[[Arthur Cardoso]]"], Marca: ["[[Madame_Labs]]"] });
   });
 });
 
@@ -480,7 +505,7 @@ test("promote turns an existing planning note into a task without asking for a b
     assert.deepEqual(promoted, { ok: true, result: { taskPath: "01-planejamento/Brainstorm.md" } });
     const note = await (await import("node:fs/promises")).readFile(join(vault, "01-planejamento", "Brainstorm.md"), "utf8");
     assert.match(note, /- task/);
-    assert.match(note, /Responsavel:\s+- '?\[\[Arthur_Cardoso\]\]/);
+    assert.match(note, /Responsavel:\s+- '?\[\[Arthur Cardoso\]\]/);
     assert.match(note, /Marca:\s+- '?\[\[Madame_Labs\]\]/);
     assert.match(note, /Projeto:\s+- '?\[\[tasknotes-dual-vault-e-adaptador\]\]/);
   } finally {
@@ -520,7 +545,7 @@ test("promote writes the vault vocabulary into a real collection", async () => {
     assert.match(note, /type: plano/);
     assert.match(note, /- task/);
     assert.match(note, /status: backlog/);
-    assert.match(note, /assignees:\s+- '?\[\[Arthur_Cardoso\]\]/);
+    assert.match(note, /assignees:\s+- '?\[\[Arthur Cardoso\]\]/);
     assert.match(note, /marca:\s+- '?\[\[Madame_Labs\]\]/);
     assert.match(note, /projects:\s+- '?\[\[projeto-x\]\]/);
     assert.doesNotMatch(note, /Responsavel|Marca:|Projeto:/);
@@ -792,7 +817,7 @@ test("a backend failure reports the reason instead of a fixed sentence", async (
     await writeFile(fake, `console.log('\u001b[31m✗ Failed to read task: File not found: alvo.md\u001b[39m'); process.exit(1);`);
     const configPath = join(dir, "config.json");
     await writeFile(configPath, JSON.stringify({
-      workspace: "teste", vault: "V", vaultPath: dir, defaultResponsavel: "Arthur_Cardoso",
+      workspace: "teste", vault: "V", vaultPath: dir, defaultResponsavel: "arthur",
       desktop: { baseUrl: "http://127.0.0.1:1", authToken: "x" },
       headless: { mtnPath: fake },
     }));
@@ -872,7 +897,7 @@ test("set-status refuses a completion date on an open status, a malformed date a
     await writeFile(fake, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'x');`);
     const configPath = join(dir, "config.json");
     await writeFile(configPath, JSON.stringify({
-      workspace: "teste", vault: "V", vaultPath: dir, defaultResponsavel: "Arthur_Cardoso",
+      workspace: "teste", vault: "V", vaultPath: dir, defaultResponsavel: "arthur",
       desktop: { baseUrl: "http://127.0.0.1:1", authToken: "x" },
       headless: { mtnPath: fake },
     }));

@@ -30,7 +30,7 @@ test("loads a valid configuration and derives a state directory", async () => {
   await withConfig(validConfig, async (path) => {
     const config = await loadConfig(path);
     assert.equal(config.workspace, validConfig.workspace);
-    assert.equal(config.defaultResponsavel, "Arthur_Cardoso");
+    assert.equal(config.defaultResponsavel, "arthur");
     const suffix = process.platform === "win32"
       ? "MadameLabs/TaskNotesAgent"
       : "madamelabs-tasknotes";
@@ -49,15 +49,33 @@ test("rejects a configuration without vaultPath", async () => {
   await withConfig(invalid, (path) => assert.rejects(loadConfig(path), /missing_vaultPath/));
 });
 
-test("accepts the canonical note name as default responsavel", async () => {
-  await withConfig({ ...validConfig, defaultResponsavel: "Arthur_Cardoso" }, async (path) =>
-    assert.equal((await loadConfig(path)).defaultResponsavel, "Arthur_Cardoso"),
+test("rejects a brand name as default responsavel, naming the alias", async () => {
+  await withConfig({ ...validConfig, defaultResponsavel: "Arthur_Cardoso" }, (path) =>
+    assert.rejects(loadConfig(path), /responsavel_antigo: use arthur \(Arthur Cardoso\)/),
   );
 });
 
+test("maps aliases to people", () => {
+  assert.deepEqual(resolveResponsavel("arthur"), ["Arthur Cardoso"]);
+  assert.deepEqual(resolveResponsavel("mayara"), ["Mayara Almeida"]);
+  assert.deepEqual(resolveResponsavel("Mayara Almeida"), ["Mayara Almeida"]);
+  assert.deepEqual(resolveResponsavel("[[Arthur Cardoso]]"), ["Arthur Cardoso"]);
+  assert.equal(resolveResponsavel("ninguem"), null);
+});
+
+test("labs maps to both partners", () => {
+  assert.deepEqual(resolveResponsavel("labs"), ["Arthur Cardoso", "Mayara Almeida"]);
+});
+
+test("rejects brand names as responsavel with the new name", () => {
+  assert.throws(() => resolveResponsavel("Madame_Carmen"), /responsavel_antigo: use mayara \(Mayara Almeida\)/);
+  assert.throws(() => resolveResponsavel("[[Arthur_Cardoso]]"), /responsavel_antigo: use arthur \(Arthur Cardoso\)/);
+  assert.throws(() => resolveResponsavel("Madame_Labs"), /responsavel_antigo: use labs \(Arthur Cardoso, Mayara Almeida\)/);
+});
+
 test("accepts the Miss. Labs aliases", async () => {
-  assert.equal(resolveResponsavel("misslabs"), "Miss. Labs");
-  assert.equal(resolveResponsavel("[[Miss. Labs]]"), "Miss. Labs");
+  assert.deepEqual(resolveResponsavel("misslabs"), ["Miss. Labs"]);
+  assert.deepEqual(resolveResponsavel("[[Miss. Labs]]"), ["Miss. Labs"]);
 });
 
 test("rejects an unsupported default responsavel", async () => {
