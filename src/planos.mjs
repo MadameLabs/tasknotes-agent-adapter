@@ -145,6 +145,8 @@ export function avaliarPlano(caminhoAbs, texto, pastas) {
   const fm = lerFrontmatter(texto);
   const tipo = fm?.type?.[0]?.toLowerCase();
   if (!tipo || !TIPOS_PLANO.includes(tipo)) return naoPlano;
+  const status = fm.status?.[0]?.trim().toLowerCase();
+  if (status === "concluido" || status === "cancelado") return { ehPlano: true, noPadrao: true, faltando: [] };
   const faltando = [];
   if (!(fm.tags ?? []).some((t) => t.replace(/^#/, "").trim() === "task")) faltando.push("task");
   if (!naoVazio(fm.projects)) faltando.push("projects");

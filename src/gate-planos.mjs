@@ -193,20 +193,30 @@ async function saida({ agente, entrada, env, cwd, desde }, base) {
   return responder(agente, "saida", montarMotivo(pendentes, base, entrada?.cwd ?? cwd));
 }
 
-async function pendentesTodos(base) {
-  const fora = await listarForaDoPadrao({ pastas: base.pastas });
+async function pendentesTodos(base, alterados) {
+  let filtro;
+  if (alterados) {
+    let novos;
+    try {
+      novos = new Set(await alteradosNoGit(base.base));
+    } catch {
+      return CALADO;
+    }
+    filtro = (caminho) => novos.has(caminho);
+  }
+  const fora = await listarForaDoPadrao({ pastas: base.pastas, filtro });
   if (!fora.length) return CALADO;
   const linhas = fora.map((p) => `${path.relative(base.base, p.caminho).replace(/\\/g, "/")}\t${p.faltando.join(",")}`);
   return { stdout: `${linhas.join("\n")}\n`, codigo: 1 };
 }
 
-export async function executarGatePlanos(modo, { agente = "claude", entrada = {}, env = process.env, cwd = process.cwd(), desde } = {}) {
+export async function executarGatePlanos(modo, { agente = "claude", entrada = {}, env = process.env, cwd = process.cwd(), desde, alterados = false } = {}) {
   try {
     const base = await lerBaseToml(env?.MADAMELABS_BASE_TOML);
     if (!base || !base.base || !base.pastas.length) return CALADO;
     if (modo === "escrita") return await escrita({ agente, entrada, env, cwd }, base);
     if (modo === "saida") return await saida({ agente, entrada, env, cwd, desde }, base);
-    if (modo === "pendentes") return await pendentesTodos(base);
+    if (modo === "pendentes") return await pendentesTodos(base, alterados);
     return CALADO;
   } catch {
     return CALADO;

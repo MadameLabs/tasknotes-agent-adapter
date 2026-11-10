@@ -271,3 +271,29 @@ test("saida com base que não é repositório Git passa calada", async () => {
   const r = await rodar(["saida", "--agent", "claude", "--desde", ANTES], { env: { ...env, MADAMELABS_BASE_TOML: path.join(dir, "sg.toml") }, entrada: { session_id: "s" } });
   assert.deepEqual([r.codigo, r.stdout], [0, ""]);
 });
+
+test("pendentes --alterados lista só o plano novo; sem a flag lista os dois", async () => {
+  const { base, pasta, env } = await ambiente();
+  await writeFile(path.join(pasta, "velho.md"), nota());
+  git(base, "add", "-A");
+  git(base, "commit", "-q", "-m", "velho");
+  const so = await rodar(["pendentes", "--alterados"], { env });
+  assert.deepEqual([so.codigo, so.stdout], [0, ""]);
+  await writeFile(path.join(pasta, "novo.md"), nota());
+  const r = await rodar(["pendentes", "--alterados"], { env });
+  assert.equal(r.codigo, 1);
+  assert.equal(r.stdout, "13-engenharia/01-planejamento/novo.md\ttask,projects,brand\n");
+  const todos = await rodar(["pendentes"], { env });
+  assert.equal(todos.codigo, 1);
+  assert.deepEqual(todos.stdout.trim().split("\n").map((l) => l.split("\t")[0]), ["13-engenharia/01-planejamento/novo.md", "13-engenharia/01-planejamento/velho.md"]);
+});
+
+test("pendentes --alterados com base sem Git sai calado com exit 0", async () => {
+  const { dir, env } = await ambiente();
+  const base = path.join(dir, "sem-git2");
+  await mkdir(path.join(base, "p"), { recursive: true });
+  await writeFile(path.join(base, "p", "novo.md"), nota());
+  await writeFile(path.join(dir, "sg2.toml"), `base = "${base}"\npadrao = "p"\n`);
+  const r = await rodar(["pendentes", "--alterados"], { env: { ...env, MADAMELABS_BASE_TOML: path.join(dir, "sg2.toml") } });
+  assert.deepEqual([r.codigo, r.stdout], [0, ""]);
+});

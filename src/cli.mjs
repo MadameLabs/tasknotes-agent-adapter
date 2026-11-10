@@ -107,7 +107,7 @@ if (command === "gate-planos") {
   }
   try {
     const { executarGatePlanos } = await import("./gate-planos.mjs");
-    const { stdout, codigo } = await executarGatePlanos(modo, { agente: option("--agent", "claude"), entrada, env: process.env, cwd: process.cwd(), desde: option("--desde") });
+    const { stdout, codigo } = await executarGatePlanos(modo, { agente: option("--agent", "claude"), entrada, env: process.env, cwd: process.cwd(), desde: option("--desde"), alterados: process.argv.includes("--alterados") });
     if (stdout) process.stdout.write(stdout);
     process.exitCode = codigo;
   } catch {

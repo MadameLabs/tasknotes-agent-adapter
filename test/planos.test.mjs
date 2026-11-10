@@ -166,3 +166,12 @@ test("só .md é proibido", () => {
   assert.equal(caminhoProibido("/home/u/.claude/plans/b.json", ctx()), null);
   assert.equal(caminhoProibido("/home/u/repos/x/plans/A.MD", ctx()), "plans/**");
 });
+
+test("plano concluido ou cancelado está no padrão mesmo sem task; aprovado ou sem status não", () => {
+  const pastas = ["/b/p"];
+  for (const st of ["concluido", "cancelado", "Concluido"]) {
+    assert.deepEqual(avaliarPlano("/b/p/a.md", nota("plano", `status: ${st}\n`), pastas), { ehPlano: true, noPadrao: true, faltando: [] });
+  }
+  assert.deepEqual(avaliarPlano("/b/p/a.md", nota("plano", "status: aprovado\n"), pastas).faltando, ["task", "projects", "brand"]);
+  assert.deepEqual(avaliarPlano("/b/p/a.md", nota("plano"), pastas).faltando, ["task", "projects", "brand"]);
+});
