@@ -91,7 +91,29 @@ function gateContext({ agent, configPath, defaultResponsavel, sessionId, binding
   ].join("\n\n");
 }
 
-if (configIndex === -1 || !process.argv[configIndex + 1]) {
+if (command === "gate-planos") {
+  // Hook bloqueante de todas as sessoes: nunca falha por entrada inesperada e
+  // so le o base.toml, por isso vem antes da exigencia de --config.
+  const modo = process.argv[3];
+  let entrada = {};
+  if (modo !== "pendentes" && !process.stdin.isTTY) {
+    try {
+      const raw = await new Promise((resolve) => { let acc = ""; process.stdin.on("data", (chunk) => acc += chunk); process.stdin.on("end", () => resolve(acc)); process.stdin.on("error", () => resolve("")); });
+      const parsed = raw.trim() ? JSON.parse(raw.replace(/^﻿/, "")) : {};
+      entrada = parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      entrada = {};
+    }
+  }
+  try {
+    const { executarGatePlanos } = await import("./gate-planos.mjs");
+    const { stdout, codigo } = await executarGatePlanos(modo, { agente: option("--agent", "claude"), entrada, env: process.env, cwd: process.cwd(), desde: option("--desde") });
+    if (stdout) process.stdout.write(stdout);
+    process.exitCode = codigo;
+  } catch {
+    process.exitCode = 0;
+  }
+} else if (configIndex === -1 || !process.argv[configIndex + 1]) {
   output({ ok: false, error: "missing_config", message: "--config is required" });
   process.exitCode = 2;
 } else {
