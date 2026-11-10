@@ -81,7 +81,11 @@ export async function lerBaseToml(caminho) {
   }
   const pastas = base ? [...new Set(destinos.map((d) => path.resolve(base, d)))] : [];
   const proibidosExtra = Array.isArray(t.gate_planos_proibidos) ? t.gate_planos_proibidos : [];
-  return { base, pastas, proibidosExtra };
+  const mapa = { padrao: base && typeof t.padrao === "string" && t.padrao ? path.resolve(base, t.padrao) : "", repos: {} };
+  if (base && t.repos && typeof t.repos === "object") {
+    for (const [k, v] of Object.entries(t.repos)) if (typeof v === "string" && v) mapa.repos[k] = path.resolve(base, v);
+  }
+  return { base, pastas, proibidosExtra, destinos: mapa };
 }
 
 // --- Frontmatter ---

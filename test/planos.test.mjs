@@ -36,6 +36,8 @@ test("lê padrao e [repos] do base.toml como pastas absolutas", async () => {
     path.join(base, "03-financeiro/01-planejamento"),
   ]);
   assert.deepEqual(r.proibidosExtra, []);
+  assert.equal(r.destinos.padrao, path.join(base, "13-engenharia/01-planejamento"));
+  assert.equal(r.destinos.repos.financeiro, path.join(base, "03-financeiro/01-planejamento"));
 });
 
 test("base.toml lê gate_planos_proibidos e literais com aspas simples", async () => {

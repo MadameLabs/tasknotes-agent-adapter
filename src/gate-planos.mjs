@@ -12,7 +12,7 @@ const CALADO = Object.freeze({ stdout: "", codigo: 0 });
 const CONFIG_LITERAL = "<config.agent.local.json do workspace>";
 
 async function rodarGit(dir, args) {
-  const { stdout } = await git("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 15000 });
+  const { stdout } = await git("git", ["-C", dir, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 5000 });
   return stdout;
 }
 
@@ -61,13 +61,17 @@ async function escrita({ agente, entrada, env, cwd }, base) {
   const arquivo = ti?.file_path ?? ti?.path;
   if (typeof arquivo !== "string" || !arquivo) return CALADO;
   const abs = path.resolve(entrada.cwd ?? cwd ?? process.cwd(), arquivo);
+  const raizGit = await raizGitDe(abs);
   const padrao = caminhoProibido(abs, {
-    raizGit: await raizGitDe(abs),
+    raizGit,
     home: env?.HOME || homedir(),
     extras: base.proibidosExtra,
   });
   if (!padrao) return CALADO;
-  const destino = base.pastas[0];
+  if (existsSync(abs)) return CALADO; // so barra a criacao de arquivo novo; os existentes seguem editaveis
+  const nomeRepo = raizGit ? path.basename(raizGit) : "";
+  const repos = base.destinos?.repos ?? {};
+  const destino = (nomeRepo && Object.hasOwn(repos, nomeRepo) ? repos[nomeRepo] : base.destinos?.padrao) || base.pastas[0];
   return responder(agente, "escrita", `Plano não pode ser salvo em ${abs} (padrão ${padrao}). Salve em ${destino}/ .`);
 }
 
@@ -180,7 +184,7 @@ async function saida({ agente, entrada, env, cwd, desde }, base) {
   const anterior = await lerEstado(arquivoEstado);
   const igual = anterior && anterior.conjunto.length === conjunto.length && anterior.conjunto.every((v, i) => v === conjunto[i]);
   if (igual && anterior.liberado) return CALADO; // ja liberado e registrado: Stop de turno seguinte
-  if (entrada?.stop_hook_active === true || igual) {
+  if (igual) {
     await mkdir(stateDir, { recursive: true });
     const quando = new Date().toISOString();
     const linhas = pendentes.map((p) => JSON.stringify({ quando, sessao, caminho: p.caminho, faltando: p.faltando })).join("\n");

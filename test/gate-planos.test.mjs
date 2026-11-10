@@ -185,12 +185,52 @@ test("segunda saida com o mesmo conjunto passa e grava pendentes.jsonl", async (
   assert.ok(linha.quando);
 });
 
-test("saida com stop_hook_active deixa parar e grava pendentes.jsonl", async () => {
+test("saida com stop_hook_active libera conjunto ja recusado e grava pendentes.jsonl", async () => {
   const { pasta, env, pendentesJsonl } = await ambiente();
   await writeFile(path.join(pasta, "novo.md"), nota());
+  const b = await rodar(["saida", "--agent", "claude", "--desde", ANTES], { env, entrada: { session_id: "s2" } });
+  assert.equal(JSON.parse(b.stdout).decision, "block");
   const r = await rodar(["saida", "--agent", "claude", "--desde", ANTES], { env, entrada: { session_id: "s2", stop_hook_active: true } });
   assert.deepEqual([r.codigo, r.stdout], [0, ""]);
   assert.ok(existsSync(pendentesJsonl));
+});
+
+test("saida com stop_hook_active e conjunto novo ainda bloqueia", async () => {
+  const { pasta, env } = await ambiente();
+  await writeFile(path.join(pasta, "a.md"), nota());
+  const b = await rodar(["saida", "--agent", "claude", "--desde", ANTES], { env, entrada: { session_id: "s3" } });
+  assert.equal(JSON.parse(b.stdout).decision, "block");
+  await writeFile(path.join(pasta, "b.md"), nota());
+  const r = await rodar(["saida", "--agent", "claude", "--desde", ANTES], { env, entrada: { session_id: "s3", stop_hook_active: true } });
+  const j = JSON.parse(r.stdout);
+  assert.equal(j.decision, "block");
+  assert.match(j.reason, /b\.md/);
+});
+
+test("escrita em caminho proibido: arquivo existente passa, novo e negado", async () => {
+  const { dir, env } = await ambiente();
+  const repo = path.join(dir, "repo");
+  await mkdir(path.join(repo, "docs", "plans"), { recursive: true });
+  git(repo, "init", "-q");
+  await writeFile(path.join(repo, "docs", "plans", "old.md"), "x");
+  const velho = await rodar(["escrita", "--agent", "claude"], { env, entrada: { tool_input: { file_path: path.join(repo, "docs", "plans", "old.md") }, cwd: repo } });
+  assert.deepEqual([velho.codigo, velho.stdout], [0, ""]);
+  const novo = await rodar(["escrita", "--agent", "claude"], { env, entrada: { tool_input: { file_path: path.join(repo, "docs", "plans", "new.md") }, cwd: repo } });
+  assert.equal(JSON.parse(novo.stdout).hookSpecificOutput.permissionDecision, "deny");
+});
+
+test("mensagem de escrita nomeia o destino do repo, senao o padrao", async () => {
+  const { dir, base, pasta, env } = await ambiente();
+  await writeFile(env.MADAMELABS_BASE_TOML, `base = "${base}"\npadrao = "13-engenharia/01-planejamento"\n[repos]\n"financeiro" = "03-financeiro/01-planejamento"\n`);
+  const motivo = async (nome) => {
+    const repo = path.join(dir, nome);
+    await mkdir(repo, { recursive: true });
+    git(repo, "init", "-q");
+    const r = await rodar(["escrita", "--agent", "claude"], { env, entrada: { tool_input: { file_path: path.join(repo, "docs", "plans", "a.md") }, cwd: repo } });
+    return JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  };
+  assert.ok((await motivo("financeiro")).includes(path.join(base, "03-financeiro", "01-planejamento")));
+  assert.ok((await motivo("outro")).includes(pasta));
 });
 
 test("sem base.toml todos os modos saem calados com exit 0", async () => {
