@@ -84,15 +84,22 @@ async function inicioDaSessao(entrada, desde) {
   if (typeof transcript !== "string" || !transcript) return null;
   try {
     const texto = await readFile(transcript, "utf8");
-    const primeira = texto.slice(0, texto.indexOf("\n") < 0 ? undefined : texto.indexOf("\n")).replace(/^﻿/, "");
-    const ts = JSON.parse(primeira)?.timestamp;
-    const t = ts ? dataValida(ts) : null;
-    if (t !== null) return t;
+    for (const linha of texto.split("\n", 200)) {
+      let ts;
+      try {
+        ts = JSON.parse(linha.replace(/^\uFEFF/, ""))?.timestamp;
+      } catch {
+        continue;
+      }
+      const t = typeof ts === "string" || typeof ts === "number" ? dataValida(ts) : null;
+      if (t !== null) return t;
+    }
   } catch {
-    // cai para o mtime
+    return null;
   }
   try {
-    return (await stat(transcript)).mtimeMs;
+    const nascimento = (await stat(transcript)).birthtimeMs;
+    return nascimento > 0 ? nascimento : null;
   } catch {
     return null;
   }
@@ -100,16 +107,20 @@ async function inicioDaSessao(entrada, desde) {
 
 // Caminhos novos ou alterados segundo `git status`, absolutos. Plano que chegou por pull nao aparece.
 async function alteradosNoGit(base) {
-  const raiz = (await rodarGit(base, ["rev-parse", "--show-toplevel"])).trim();
-  const bruto = await rodarGit(base, ["status", "--porcelain", "-z", "--untracked-files=all"]);
+  // Caminhos do porcelain sao relativos a raiz do repositorio; tira o prefixo
+  // da base dentro dele e junta com a base do base.toml (sem depender de realpath).
+  const prefixo = (await rodarGit(base, ["rev-parse", "--show-prefix"])).trim();
+  const bruto = await rodarGit(base, ["--no-optional-locks", "status", "--porcelain", "-z", "--untracked-files=all"]);
   const partes = bruto.split("\0");
   const caminhos = [];
   for (let i = 0; i < partes.length; i += 1) {
     const p = partes[i];
     if (p.length < 4) continue;
     const xy = p.slice(0, 2);
-    caminhos.push(path.resolve(raiz, p.slice(3)));
+    const rel = p.slice(3);
     if (xy.includes("R") || xy.includes("C")) i += 1; // proximo campo e o caminho de origem
+    if (prefixo && !rel.startsWith(prefixo)) continue;
+    caminhos.push(path.join(base, rel.slice(prefixo.length)));
   }
   return caminhos;
 }
@@ -128,7 +139,8 @@ function montarMotivo(pendentes, base, cwd) {
 async function lerEstado(arquivo) {
   try {
     const v = JSON.parse(await readFile(arquivo, "utf8"));
-    return Array.isArray(v) ? v : null;
+    if (Array.isArray(v)) return { conjunto: v, liberado: false };
+    return v && Array.isArray(v.conjunto) ? { conjunto: v.conjunto, liberado: v.liberado === true } : null;
   } catch {
     return null;
   }
@@ -146,7 +158,6 @@ async function saida({ agente, entrada, env, cwd, desde }, base) {
   const pendentes = [];
   for (const caminho of [...new Set(candidatos)].sort()) {
     if (!caminho.toLowerCase().endsWith(".md")) continue;
-    if (!base.pastas.some((p) => path.resolve(p) === path.dirname(caminho))) continue;
     try {
       if ((await stat(caminho)).mtimeMs < inicio) continue;
       const r = avaliarPlano(caminho, await readFile(caminho, "utf8"), base.pastas);
@@ -167,16 +178,18 @@ async function saida({ agente, entrada, env, cwd, desde }, base) {
   }
   const conjunto = pendentes.map((p) => p.caminho).sort();
   const anterior = await lerEstado(arquivoEstado);
-  const igual = anterior && anterior.length === conjunto.length && anterior.every((v, i) => v === conjunto[i]);
+  const igual = anterior && anterior.conjunto.length === conjunto.length && anterior.conjunto.every((v, i) => v === conjunto[i]);
+  if (igual && anterior.liberado) return CALADO; // ja liberado e registrado: Stop de turno seguinte
   if (entrada?.stop_hook_active === true || igual) {
     await mkdir(stateDir, { recursive: true });
     const quando = new Date().toISOString();
     const linhas = pendentes.map((p) => JSON.stringify({ quando, sessao, caminho: p.caminho, faltando: p.faltando })).join("\n");
     await appendFile(path.join(stateDir, "pendentes.jsonl"), `${linhas}\n`);
+    await writeFile(arquivoEstado, JSON.stringify({ conjunto, liberado: true }));
     return CALADO;
   }
   await mkdir(stateDir, { recursive: true });
-  await writeFile(arquivoEstado, JSON.stringify(conjunto));
+  await writeFile(arquivoEstado, JSON.stringify({ conjunto, liberado: false }));
   return responder(agente, "saida", montarMotivo(pendentes, base, entrada?.cwd ?? cwd));
 }
 

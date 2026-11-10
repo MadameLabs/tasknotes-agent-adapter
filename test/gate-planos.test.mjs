@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, utimes, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -227,4 +227,47 @@ test("gate-planos não exige --config", async () => {
   const r = await rodar(["pendentes"], { env });
   assert.ok(!r.stdout.includes("missing_config"));
   assert.equal(r.codigo, 0);
+});
+
+test("saida acha o início num transcript real, com linhas sem timestamp antes", async () => {
+  const { dir, pasta, env } = await ambiente();
+  const inicio = new Date(Date.now() - 60_000).toISOString();
+  const transcript = path.join(dir, "real.jsonl");
+  await writeFile(transcript, [{ type: "mode" }, { type: "file-history-snapshot" }, { type: "user", timestamp: inicio }].map((l) => JSON.stringify(l)).join("\n") + "\n");
+  await writeFile(path.join(pasta, "novo.md"), nota());
+  const r = await rodar(["saida", "--agent", "claude"], { env, entrada: { session_id: "s1", transcript_path: transcript } });
+  assert.equal(JSON.parse(r.stdout).decision, "block");
+});
+
+test("saida bloqueia com a base alcançada por symlink", async () => {
+  const { dir, base, pasta, env } = await ambiente();
+  const link = path.join(dir, "link-bib");
+  await symlink(base, link);
+  await writeFile(path.join(dir, "base-link.toml"), `base = "${link}"\npadrao = "13-engenharia/01-planejamento"\n`);
+  await writeFile(path.join(pasta, "novo.md"), nota());
+  const r = await rodar(["saida", "--agent", "claude", "--desde", ANTES], { env: { ...env, MADAMELABS_BASE_TOML: path.join(dir, "base-link.toml") }, entrada: { session_id: "s1" } });
+  assert.equal(JSON.parse(r.stdout).decision, "block");
+});
+
+test("três saidas com o mesmo conjunto: bloqueia, libera e grava, libera sem regravar", async () => {
+  const { pasta, env, pendentesJsonl } = await ambiente();
+  await writeFile(path.join(pasta, "novo.md"), nota());
+  const args = ["saida", "--agent", "claude", "--desde", ANTES];
+  const entrada = { session_id: "s3" };
+  assert.equal(JSON.parse((await rodar(args, { env, entrada })).stdout).decision, "block");
+  assert.equal((await rodar(args, { env, entrada })).stdout, "");
+  const linhas = (await readFile(pendentesJsonl, "utf8")).trim().split("\n").length;
+  const terceira = await rodar(args, { env, entrada });
+  assert.deepEqual([terceira.codigo, terceira.stdout], [0, ""]);
+  assert.equal((await readFile(pendentesJsonl, "utf8")).trim().split("\n").length, linhas);
+});
+
+test("saida com base que não é repositório Git passa calada", async () => {
+  const { dir, env } = await ambiente();
+  const base = path.join(dir, "sem-git");
+  await mkdir(path.join(base, "p"), { recursive: true });
+  await writeFile(path.join(base, "p", "novo.md"), nota());
+  await writeFile(path.join(dir, "sg.toml"), `base = "${base}"\npadrao = "p"\n`);
+  const r = await rodar(["saida", "--agent", "claude", "--desde", ANTES], { env: { ...env, MADAMELABS_BASE_TOML: path.join(dir, "sg.toml") }, entrada: { session_id: "s" } });
+  assert.deepEqual([r.codigo, r.stdout], [0, ""]);
 });
