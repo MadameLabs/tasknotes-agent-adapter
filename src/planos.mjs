@@ -79,7 +79,7 @@ export async function lerBaseToml(caminho) {
   if (t.repos && typeof t.repos === "object") {
     for (const v of Object.values(t.repos)) if (typeof v === "string" && v) destinos.push(v);
   }
-  const pastas = [...new Set(destinos.map((d) => path.resolve(base, d)))];
+  const pastas = base ? [...new Set(destinos.map((d) => path.resolve(base, d)))] : [];
   const proibidosExtra = Array.isArray(t.gate_planos_proibidos) ? t.gate_planos_proibidos : [];
   return { base, pastas, proibidosExtra };
 }
@@ -93,7 +93,14 @@ function semAspas(v) {
 }
 
 function tirarComentarioYaml(v) {
-  return /^\s*['"]/.test(v) ? v : v.replace(/\s+#.*$/, "");
+  const q = v.match(/^(\s*)(['"])/);
+  if (q) {
+    // valor entre aspas: o comentario so comeca depois da aspa de fechamento
+    const fim = v.indexOf(q[2], q[0].length);
+    if (fim < 0) return v;
+    return v.slice(0, fim + 1) + v.slice(fim + 1).replace(/\s+#.*$/, "");
+  }
+  return v.replace(/\s+#.*$/, "");
 }
 
 function lerFrontmatter(texto) {
@@ -164,4 +171,38 @@ export async function listarForaDoPadrao({ pastas, filtro } = {}) {
     }
   }
   return fora;
+}
+
+// --- Ponto 1: escrita em lugar errado ---
+
+const PROIBIDOS_REPO = Object.freeze(["docs/superpowers/**", "docs/plans/**", "docs/specs/**", "plans/**", "specs/**"]);
+const PLAN_MODE = "~/.claude/plans/**";
+
+const barras = (p) => String(p).replace(/\\/g, "/").replace(/\/+$/, "");
+
+// Caminho de `abs` relativo a `raiz` (ambos normalizados para "/"), ou null se estiver fora dela.
+// Unidade de disco do Windows compara sem diferenciar maiusculas.
+function relativoA(abs, raiz) {
+  if (!raiz) return null;
+  const a = barras(abs);
+  const r = barras(raiz);
+  const winA = /^[A-Za-z]:\//.test(a);
+  const winR = /^[A-Za-z]:(\/|$)/.test(r);
+  const ci = winA && winR;
+  const prefixo = `${r}/`;
+  const cabeca = a.slice(0, prefixo.length);
+  if ((ci ? cabeca.toLowerCase() !== prefixo.toLowerCase() : cabeca !== prefixo)) return null;
+  return a.slice(prefixo.length);
+}
+
+export function caminhoProibido(arquivo, { raizGit = null, home, extras = [] } = {}) {
+  if (!String(arquivo).toLowerCase().endsWith(".md")) return null;
+  const doPlanMode = home ? relativoA(arquivo, `${barras(home)}/.claude/plans`) : null;
+  if (doPlanMode) return PLAN_MODE;
+  const rel = relativoA(arquivo, raizGit);
+  if (!rel) return null;
+  for (const padrao of [...PROIBIDOS_REPO, ...extras]) {
+    if (path.posix.matchesGlob(rel, padrao)) return padrao;
+  }
+  return null;
 }
