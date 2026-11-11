@@ -5,9 +5,9 @@
 // config vale o portugues, que era o unico vocabulario ate entao.
 export const STATUS_ROLES = ["backlog", "to-do", "em-andamento", "aprovacao", "pausa", "concluido", "cancelado"];
 const FIELD_ROLES = { responsavel: "Responsavel", marca: "Marca", projeto: "Projeto" };
-// Projeto tem ciclo proprio (design ciclo-de-vida-de-projetos, 2026-11-11):
-// os papeis nao sao os da tarefa, e a BIBLIOTECA grava cada um pelo nome.
-export const PROJECT_STATUS_ROLES = ["ativo", "pausado", "aprovacao", "concluido", "cancelado"];
+// Projeto usa os mesmos papeis da tarefa (Arthur, 2026-11-11: "igual as
+// tarefas"), num vocabulario proprio para o vault poder grava-los diferente.
+export const PROJECT_STATUS_ROLES = [...STATUS_ROLES];
 
 export const DEFAULT_VOCABULARY = {
   statuses: Object.fromEntries(STATUS_ROLES.map((role) => [role, role])),

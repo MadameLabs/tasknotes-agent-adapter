@@ -3,8 +3,9 @@ import { PROJECT_STATUS_ROLES } from "./vocabulary.mjs";
 export { PROJECT_STATUS_ROLES };
 
 // Regra de transicao de projeto (andar 2 do mdbase-agentops): o status so muda
-// com responsavel; sair de `ativo` exige desfecho, e pausar exige data de
-// retomada futura. Voltar a `ativo` devolve `null` nos tres campos, o que
+// com responsavel; `aprovacao`, `pausa`, `concluido` e `cancelado` exigem
+// desfecho, e `pausa` exige data de retomada futura. `backlog`, `to-do` e
+// `em-andamento` sao trabalho aberto: devolvem `null` nos tres campos, o que
 // apaga o campo do frontmatter -- o historico fica no Git da base.
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -20,16 +21,18 @@ function dataValida(value) {
 const WIKILINK = /^\[\[[^\]]+\]\]$/;
 export const normalizeOwner = (value) => (typeof value === "string" && WIKILINK.test(value.trim()) ? value.trim() : null);
 
+const ABERTOS = new Set(["backlog", "to-do", "em-andamento"]);
+
 export function projectTransition({ role, desfecho, retomarEm, owner, today, vocabulary }) {
   if (!PROJECT_STATUS_ROLES.includes(role)) throw new Error(`invalid_project_status:${role}`);
   if (!normalizeOwner(owner)) throw new Error("owner_obrigatorio");
   const status = vocabulary.projectStatuses[role];
-  if (retomarEm !== undefined && role !== "pausado") throw new Error("retomada_so_em_pausa");
-  if (role === "ativo") return { status, outcome: null, outcomeDate: null, resumeOn: null };
+  if (retomarEm !== undefined && role !== "pausa") throw new Error("retomada_so_em_pausa");
+  if (ABERTOS.has(role)) return { status, outcome: null, outcomeDate: null, resumeOn: null };
   const outcome = typeof desfecho === "string" ? desfecho.trim() : "";
   if (!outcome) throw new Error("desfecho_obrigatorio");
   let resumeOn = null;
-  if (role === "pausado") {
+  if (role === "pausa") {
     if (retomarEm === undefined) throw new Error("retomada_obrigatoria");
     if (!dataValida(retomarEm)) throw new Error("retomada_invalida");
     if (retomarEm <= today) throw new Error("retomada_no_passado");

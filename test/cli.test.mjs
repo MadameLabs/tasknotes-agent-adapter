@@ -1033,8 +1033,8 @@ async function projectCli() {
   const { dir, vault } = await makeVault({
     "11-pessoas/Arthur Cardoso.md": { type: "pessoa", name: "Arthur Cardoso" },
     "11-pessoas/Lucilene.md": { type: "pessoa", name: "Lucilene" },
-    "02-marcas/a/Projetos/q.md": { type: "projeto", brand: "'[[A]]'", status: "ativo", owner: "'[[Arthur Cardoso]]'" },
-    "02-marcas/a/Projetos/r.md": { type: "projeto", brand: "'[[A]]'", status: "ativo" },
+    "02-marcas/a/Projetos/q.md": { type: "projeto", brand: "'[[A]]'", status: "em-andamento", owner: "'[[Arthur Cardoso]]'" },
+    "02-marcas/a/Projetos/r.md": { type: "projeto", brand: "'[[A]]'", status: "em-andamento" },
     "06-tarefas/Tasks/T.md": { title: "T", status: "to-do", tags: ["task"], projects: ["'[[q]]'"] },
   });
   const config = join(dir, "config.json");
@@ -1064,7 +1064,7 @@ test("project-status grava o desfecho e recusa fechar sem ele sem tocar no arqui
     assert.match(written, /status: concluido/);
     assert.match(written, /outcome: entregue/);
     assert.match(written, new RegExp(`outcomeDate: '?${today}`));
-    const reopened = await cmd("project-status", "q", "--status", "ativo");
+    const reopened = await cmd("project-status", "q", "--status", "em-andamento");
     assert.equal(reopened.ok, true, JSON.stringify(reopened));
     assert.doesNotMatch(await note("q"), /outcome/);
   } finally { await rm(dir, { recursive: true, force: true }); }
@@ -1101,7 +1101,7 @@ test("--desfecho sem texto nao engole a opcao seguinte e nada e gravado", async 
   const { dir, cmd, note } = await projectCli();
   try {
     const before = await note("q");
-    const refused = await cmd("project-status", "q", "--status", "pausado", "--desfecho", "--retomar-em", "2026-12-30");
+    const refused = await cmd("project-status", "q", "--status", "pausa", "--desfecho", "--retomar-em", "2026-12-30");
     assert.equal(refused.error, "desfecho_obrigatorio", JSON.stringify(refused));
     assert.equal(await note("q"), before);
   } finally { await rm(dir, { recursive: true, force: true }); }
@@ -1110,7 +1110,7 @@ test("--desfecho sem texto nao engole a opcao seguinte e nada e gravado", async 
 test("projects --status com papel que nao e de projeto e recusado", async () => {
   const { dir, cmd } = await projectCli();
   try {
-    assert.equal((await cmd("projects", "--status", "pausa")).error, "invalid_project_status");
+    assert.equal((await cmd("projects", "--status", "ativo")).error, "invalid_project_status");
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -1124,5 +1124,22 @@ test("project-milestone grava o proximo marco e projects mostra", async () => {
     const q = (await cmd("projects")).result.items.find((entry) => entry.name === "q");
     assert.equal(q.nextMilestoneDate, "2026-12-01");
     assert.equal((await cmd("project-milestone", "q", "--marco", "x", "--data", "ontem")).error, "data_invalida");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("project-rename-status troca so o valor do status, com ensaio antes", async () => {
+  const { dir, cmd, note } = await projectCli();
+  try {
+    const { writeNote } = await import("./vault.mjs");
+    const vault = join(dir, "vault");
+    await writeNote(vault, "02-marcas/a/Projetos/velho.md", { type: "projeto", status: "ativo", owner: "'[[Arthur Cardoso]]'" });
+    const before = await note("velho");
+    const dry = await cmd("project-rename-status", "--de", "ativo", "--para", "em-andamento", "--dry-run");
+    assert.deepEqual(dry.result, { de: "ativo", para: "em-andamento", dryRun: true, paths: ["02-marcas/a/Projetos/velho.md"] });
+    assert.equal(await note("velho"), before);
+    const done = await cmd("project-rename-status", "--de", "ativo", "--para", "em-andamento");
+    assert.equal(done.result.paths.length, 1);
+    assert.match(await note("velho"), /status: em-andamento/);
+    assert.equal((await cmd("project-rename-status", "--de", "ativo", "--para", "feito")).error, "invalid_project_status");
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

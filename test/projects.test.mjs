@@ -8,8 +8,8 @@ const today = "2026-11-11";
 const owner = "[[Arthur Cardoso]]";
 const go = (input) => projectTransition({ owner, today, vocabulary, ...input });
 
-test("os papeis de projeto sao os cinco do design", () => {
-  assert.deepEqual(PROJECT_STATUS_ROLES, ["ativo", "pausado", "aprovacao", "concluido", "cancelado"]);
+test("os papeis de projeto sao os mesmos sete da tarefa", () => {
+  assert.deepEqual(PROJECT_STATUS_ROLES, ["backlog", "to-do", "em-andamento", "aprovacao", "pausa", "concluido", "cancelado"]);
 });
 
 test("concluir grava desfecho e data de hoje", () => {
@@ -18,12 +18,12 @@ test("concluir grava desfecho e data de hoje", () => {
 });
 
 test("pausar grava o motivo e a data de retomada", () => {
-  assert.deepEqual(go({ role: "pausado", desfecho: "cliente sumiu", retomarEm: "2026-12-01" }),
-    { status: "pausado", outcome: "cliente sumiu", outcomeDate: "2026-11-11", resumeOn: "2026-12-01" });
+  assert.deepEqual(go({ role: "pausa", desfecho: "cliente sumiu", retomarEm: "2026-12-01" }),
+    { status: "pausa", outcome: "cliente sumiu", outcomeDate: "2026-11-11", resumeOn: "2026-12-01" });
 });
 
 test("voltar a ativo apaga desfecho, data e retomada", () => {
-  assert.deepEqual(go({ role: "ativo" }), { status: "ativo", outcome: null, outcomeDate: null, resumeOn: null });
+  assert.deepEqual(go({ role: "em-andamento" }), { status: "em-andamento", outcome: null, outcomeDate: null, resumeOn: null });
 });
 
 test("fechar sem desfecho e recusado", () => {
@@ -32,10 +32,10 @@ test("fechar sem desfecho e recusado", () => {
 });
 
 test("pausa exige data de retomada valida e futura", () => {
-  assert.throws(() => go({ role: "pausado", desfecho: "x" }), /^Error: retomada_obrigatoria$/);
-  assert.throws(() => go({ role: "pausado", desfecho: "x", retomarEm: "11/12/2026" }), /^Error: retomada_invalida$/);
-  assert.throws(() => go({ role: "pausado", desfecho: "x", retomarEm: "2026-02-30" }), /^Error: retomada_invalida$/);
-  assert.throws(() => go({ role: "pausado", desfecho: "x", retomarEm: "2026-11-11" }), /^Error: retomada_no_passado$/);
+  assert.throws(() => go({ role: "pausa", desfecho: "x" }), /^Error: retomada_obrigatoria$/);
+  assert.throws(() => go({ role: "pausa", desfecho: "x", retomarEm: "11/12/2026" }), /^Error: retomada_invalida$/);
+  assert.throws(() => go({ role: "pausa", desfecho: "x", retomarEm: "2026-02-30" }), /^Error: retomada_invalida$/);
+  assert.throws(() => go({ role: "pausa", desfecho: "x", retomarEm: "2026-11-11" }), /^Error: retomada_no_passado$/);
 });
 
 test("data de retomada so cabe em pausa", () => {
@@ -43,7 +43,7 @@ test("data de retomada so cabe em pausa", () => {
 });
 
 test("sem responsavel nenhuma transicao passa", () => {
-  assert.throws(() => go({ role: "ativo", owner: null }), /^Error: owner_obrigatorio$/);
+  assert.throws(() => go({ role: "em-andamento", owner: null }), /^Error: owner_obrigatorio$/);
 });
 
 test("papel desconhecido e recusado pelo nome", () => {
@@ -67,4 +67,8 @@ test("proximo marco: texto obrigatorio, data opcional e valida, limpar apaga", a
   assert.throws(() => milestoneFields({}), /^Error: marco_obrigatorio$/);
   assert.throws(() => milestoneFields({ marco: "x", data: "1/12" }), /^Error: data_invalida$/);
   assert.deepEqual(milestoneFields({ limpar: true }), { nextMilestone: null, nextMilestoneDate: null });
+});
+
+test("backlog e to-do tambem apagam desfecho e nao pedem nada alem de responsavel", () => {
+  for (const role of ["backlog", "to-do"]) assert.deepEqual(go({ role }), { status: role, outcome: null, outcomeDate: null, resumeOn: null });
 });

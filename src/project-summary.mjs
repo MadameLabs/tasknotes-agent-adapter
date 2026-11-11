@@ -65,19 +65,19 @@ function minusDays(today, days) {
   return date.toISOString().slice(0, 10);
 }
 
-// Status fora de `ativo` sem desfecho: arrastado no kanban ou editado a mao.
+// Status que pede desfecho e esta sem: arrastado no kanban ou editado a mao.
 // Vale ate para projeto fechado -- e o unico motivo que traz fechado a fila.
-const PEDEM_DESFECHO = new Set(["pausado", "aprovacao", "concluido", "cancelado"]);
+const PEDEM_DESFECHO = new Set(["pausa", "aprovacao", "concluido", "cancelado"]);
 
 function reasonFor(item, { today, limite }) {
   if (PEDEM_DESFECHO.has(item.status) && !item.outcome) return "desfecho_ausente";
   if (item.status === "concluido" || item.status === "cancelado") return null;
-  if (item.status === "pausado" && item.resumeOn && item.resumeOn <= today) return "retomada_vencida";
+  if (item.status === "pausa" && item.resumeOn && item.resumeOn <= today) return "retomada_vencida";
   // Pausa legada, de antes do ciclo: sem data, ninguem voltaria a olhar.
-  if (item.status === "pausado" && !item.resumeOn) return "pausa_sem_retomada";
+  if (item.status === "pausa" && !item.resumeOn) return "pausa_sem_retomada";
   if (!item.owner) return "sem_responsavel";
   if (!item.status) return "status_desconhecido";
-  if (item.status === "ativo" && (!item.lastActivity || item.lastActivity < limite)) return "parado";
+  if (item.status === "em-andamento" && (!item.lastActivity || item.lastActivity < limite)) return "parado";
   if (item.status === "aprovacao") return "aguardando_aprovacao";
   return null;
 }

@@ -5,7 +5,7 @@ import { resolveVocabulary } from "../src/vocabulary.mjs";
 
 const vocabulary = resolveVocabulary(undefined);
 const project = (name, frontmatter = {}) => ({ path: `02-marcas/a/Projetos/${name}.md`, name,
-  frontmatter: { type: "projeto", brand: "[[A]]", status: "ativo", owner: "[[Arthur Cardoso]]", ...frontmatter } });
+  frontmatter: { type: "projeto", brand: "[[A]]", status: "em-andamento", owner: "[[Arthur Cardoso]]", ...frontmatter } });
 const task = (fields) => ({ path: `06-tarefas/Tasks/${Math.random()}.md`, status: "to-do", ...fields });
 const summarize = (projects, tasks) => summarizeProjects(projects, tasks, { vocabulary });
 const item = (projects, tasks, name = projects[0].name) => summarize(projects, tasks).items.find((entry) => entry.name === name);
@@ -50,8 +50,8 @@ test("fila: retomada vencida primeiro, depois sem responsavel, status desconheci
     project("recente"),
     project("estranho", { status: "em andamento" }),
     project("orfao", { owner: "Arthur" }),
-    project("retomar", { status: "pausado", outcome: "x", resumeOn: "2026-11-11" }),
-    project("pausa-futura", { status: "pausado", outcome: "x", resumeOn: "2026-12-01" }),
+    project("retomar", { status: "pausa", outcome: "x", resumeOn: "2026-11-11" }),
+    project("pausa-futura", { status: "pausa", outcome: "x", resumeOn: "2026-12-01" }),
   ], [
     task({ projects: ["[[parado]]"], timeEntries: [{ startTime: "2026-10-01T12:00:00Z" }] }),
     task({ projects: ["[[recente]]"], timeEntries: [{ startTime: "2026-10-20T12:00:00Z" }] }),
@@ -72,13 +72,13 @@ test("projeto fechado nao entra na fila, nem sem responsavel", () => {
 });
 
 test("pausado sem data de retomada entra na fila como pausa_sem_retomada", () => {
-  const items = summarize([project("leg", { status: "pausado", outcome: "x" })], []).items;
+  const items = summarize([project("leg", { status: "pausa", outcome: "x" })], []).items;
   assert.deepEqual(reviewQueue(items, { today: "2026-11-11" }).map((entry) => entry.reason), ["pausa_sem_retomada"]);
 });
 
 test("filtro por pessoa mantem todo projeto sem responsavel, qualquer que seja o motivo", () => {
   const items = summarize([
-    project("venceu", { status: "pausado", outcome: "x", resumeOn: "2026-11-01", owner: undefined }),
+    project("venceu", { status: "pausa", outcome: "x", resumeOn: "2026-11-01", owner: undefined }),
     project("da-mayara", { owner: "[[Mayara Almeida]]" }),
     project("meu"),
   ], []).items;
@@ -88,7 +88,7 @@ test("filtro por pessoa mantem todo projeto sem responsavel, qualquer que seja o
 
 test("fechado ou pausado sem desfecho vem antes de tudo na fila, mesmo fechado", () => {
   const items = summarize([
-    project("venceu", { status: "pausado", outcome: "x", resumeOn: "2026-11-01" }),
+    project("venceu", { status: "pausa", outcome: "x", resumeOn: "2026-11-01" }),
     project("arrastado", { status: "concluido" }),
     project("certo", { status: "concluido", outcome: "entregue" }),
   ], []).items;
@@ -100,4 +100,9 @@ test("o resumo traz o proximo marco", () => {
   const summary = item([project("p", { nextMilestone: "lançar", nextMilestoneDate: "2026-12-01" })], []);
   assert.equal(summary.nextMilestone, "lançar");
   assert.equal(summary.nextMilestoneDate, "2026-12-01");
+});
+
+test("parado vale para em-andamento; backlog parado nao entra na fila", () => {
+  const items = summarize([project("fila"), project("espera", { status: "backlog" })], []).items;
+  assert.deepEqual(reviewQueue(items, { today: "2026-11-11" }).map((entry) => entry.name), ["fila"]);
 });

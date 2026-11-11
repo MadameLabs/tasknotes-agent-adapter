@@ -150,7 +150,7 @@ if (command === "gate-planos") {
   }
   if (config) try {
     const backend = requestedBackend ?? config.defaultBackend ?? "desktop";
-    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "suggest-end", "block", "unblock", "project-status", "project-assign", "project-milestone", "projects", "project-review"].includes(command)) {
+    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "suggest-end", "block", "unblock", "project-status", "project-assign", "project-milestone", "project-rename-status", "projects", "project-review"].includes(command)) {
       output({ ok: false, error: "unknown_command", message: "unsupported command" });
       process.exitCode = 2;
     } else if (command === "hook-start" || command === "hook-end") {
@@ -315,6 +315,20 @@ if (command === "gate-planos") {
       if (blockers.includes(taskPath)) throw new Error("task_cannot_block_itself");
       const blockedBy = await backendFor(config, "headless").editBlockedBy(taskPath, blockers, command === "block" ? "add" : "remove");
       output({ ok: true, result: { taskPath, blockedBy } });
+    } else if (command === "project-rename-status") {
+      // Migracao de vocabulario (2026-11-11: `ativo` -> `em-andamento`,
+      // `pausado` -> `pausa`). So troca o valor do status, sem as regras de
+      // transicao: o projeto legado nao tem responsavel nem desfecho, e a
+      // triagem cobra isso depois. O destino tem de ser um papel valido.
+      const de = option("--de");
+      const para = option("--para");
+      if (!de || !para) throw new Error("missing_de_ou_para");
+      if (!PROJECT_STATUS_ROLES.includes(para)) throw new Error(`invalid_project_status:${para}`);
+      const api = backendFor(config, "headless");
+      const paths = (await api.listProjects()).filter((item) => item.frontmatter.status === de).map((item) => item.path).sort();
+      const dryRun = process.argv.includes("--dry-run");
+      if (!dryRun) for (const path of paths) await api.updateProject(path, { status: config.vocabulary.projectStatuses[para] });
+      output({ ok: true, result: { de, para, dryRun, paths } });
     } else if (command === "project-milestone") {
       const ref = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
       if (!ref) throw new Error("missing_project");
@@ -357,7 +371,7 @@ if (command === "gate-planos") {
       if (command === "projects") {
         const status = option("--status");
         if (status && !PROJECT_STATUS_ROLES.includes(status)) throw new Error(`invalid_project_status:${status}`);
-        const statuses = status ? [status] : ["ativo", "pausado", "aprovacao"];
+        const statuses = status ? [status] : PROJECT_STATUS_ROLES.filter((role) => role !== "concluido" && role !== "cancelado");
         output({ ok: true, result: { items: items.filter((item) => statuses.includes(item.status) && (!owner || item.owner === owner)) } });
       } else {
         const paradoHa = Number(option("--parado-ha", "30"));

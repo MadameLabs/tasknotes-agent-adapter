@@ -272,7 +272,7 @@ test("listPessoas devolve o nome de toda nota type: pessoa da colecao", async ()
   const { makeVault } = await import("./vault.mjs");
   const { dir, vault } = await makeVault({
     "11-pessoas/Lucilene.md": { type: "pessoa", name: "Lucilene" },
-    "02-marcas/a/Projetos/p.md": { type: "projeto", status: "ativo" },
+    "02-marcas/a/Projetos/p.md": { type: "projeto", status: "em-andamento" },
   });
   try {
     const backend = createMtnBackend({ mtnPath: mtn, vaultPath: vault });
@@ -283,9 +283,9 @@ test("listPessoas devolve o nome de toda nota type: pessoa da colecao", async ()
 async function projectVault() {
   const { makeVault } = await import("./vault.mjs");
   return makeVault({
-    "02-marcas/a/Projetos/p.md": { type: "projeto", status: "ativo" },
-    "02-marcas/b/Projetos/p.md": { type: "projeto", status: "ativo" },
-    "02-marcas/a/Projetos/q.md": { type: "projeto", status: "pausado", outcome: "parou", resumeOn: "2026-12-01" },
+    "02-marcas/a/Projetos/p.md": { type: "projeto", status: "em-andamento" },
+    "02-marcas/b/Projetos/p.md": { type: "projeto", status: "em-andamento" },
+    "02-marcas/a/Projetos/q.md": { type: "projeto", status: "pausa", outcome: "parou", resumeOn: "2026-12-01" },
     "02-marcas/a/Projetos/doc.md": { type: "documento" },
   });
 }
@@ -298,7 +298,7 @@ test("listProjects devolve so as notas type: projeto de 02-marcas/*/Projetos", a
     assert.deepEqual(projects.map((item) => item.path).sort(),
       ["02-marcas/a/Projetos/p.md", "02-marcas/a/Projetos/q.md", "02-marcas/b/Projetos/p.md"]);
     assert.equal(projects.find((item) => item.path.endsWith("q.md")).name, "q");
-    assert.equal(projects.find((item) => item.path.endsWith("q.md")).frontmatter.status, "pausado");
+    assert.equal(projects.find((item) => item.path.endsWith("q.md")).frontmatter.status, "pausa");
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -317,9 +317,9 @@ test("updateProject grava campos e null apaga o campo", async () => {
   const { dir, vault } = await projectVault();
   try {
     const backend = createMtnBackend({ mtnPath: mtn, vaultPath: vault });
-    await backend.updateProject("02-marcas/a/Projetos/q.md", { status: "ativo", outcome: null, resumeOn: null });
+    await backend.updateProject("02-marcas/a/Projetos/q.md", { status: "em-andamento", outcome: null, resumeOn: null });
     const note = await readFile(join(vault, "02-marcas/a/Projetos/q.md"), "utf8");
-    assert.match(note, /status: ativo/);
+    assert.match(note, /status: em-andamento/);
     assert.doesNotMatch(note, /outcome|resumeOn/);
     assert.match(note, /Corpo\./);
   } finally { await rm(dir, { recursive: true, force: true }); }
