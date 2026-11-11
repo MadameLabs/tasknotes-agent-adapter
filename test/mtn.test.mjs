@@ -267,3 +267,60 @@ test("mtn promote writes one wikilink per person", async () => {
     ]);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test("listPessoas devolve o nome de toda nota type: pessoa da colecao", async () => {
+  const { makeVault } = await import("./vault.mjs");
+  const { dir, vault } = await makeVault({
+    "11-pessoas/Lucilene.md": { type: "pessoa", name: "Lucilene" },
+    "02-marcas/a/Projetos/p.md": { type: "projeto", status: "ativo" },
+  });
+  try {
+    const backend = createMtnBackend({ mtnPath: mtn, vaultPath: vault });
+    assert.deepEqual(await backend.listPessoas(), ["Lucilene"]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+async function projectVault() {
+  const { makeVault } = await import("./vault.mjs");
+  return makeVault({
+    "02-marcas/a/Projetos/p.md": { type: "projeto", status: "ativo" },
+    "02-marcas/b/Projetos/p.md": { type: "projeto", status: "ativo" },
+    "02-marcas/a/Projetos/q.md": { type: "projeto", status: "pausado", outcome: "parou", resumeOn: "2026-12-01" },
+    "02-marcas/a/Projetos/doc.md": { type: "documento" },
+  });
+}
+
+test("listProjects devolve so as notas type: projeto de 02-marcas/*/Projetos", async () => {
+  const { dir, vault } = await projectVault();
+  try {
+    const backend = createMtnBackend({ mtnPath: mtn, vaultPath: vault });
+    const projects = await backend.listProjects();
+    assert.deepEqual(projects.map((item) => item.path).sort(),
+      ["02-marcas/a/Projetos/p.md", "02-marcas/a/Projetos/q.md", "02-marcas/b/Projetos/p.md"]);
+    assert.equal(projects.find((item) => item.path.endsWith("q.md")).name, "q");
+    assert.equal(projects.find((item) => item.path.endsWith("q.md")).frontmatter.status, "pausado");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("findProject resolve nome, wikilink e caminho, e recusa ambiguo e inexistente", async () => {
+  const { dir, vault } = await projectVault();
+  try {
+    const backend = createMtnBackend({ mtnPath: mtn, vaultPath: vault });
+    for (const ref of ["q", "[[q]]", "q.md"]) assert.equal((await backend.findProject(ref)).path, "02-marcas/a/Projetos/q.md");
+    await assert.rejects(backend.findProject("p"), /^Error: project_ambiguous:02-marcas\/a\/Projetos\/p\.md,02-marcas\/b\/Projetos\/p\.md$/);
+    assert.equal((await backend.findProject("02-marcas/b/Projetos/p.md")).path, "02-marcas/b/Projetos/p.md");
+    await assert.rejects(backend.findProject("x"), /^Error: project_not_found:x$/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("updateProject grava campos e null apaga o campo", async () => {
+  const { dir, vault } = await projectVault();
+  try {
+    const backend = createMtnBackend({ mtnPath: mtn, vaultPath: vault });
+    await backend.updateProject("02-marcas/a/Projetos/q.md", { status: "ativo", outcome: null, resumeOn: null });
+    const note = await readFile(join(vault, "02-marcas/a/Projetos/q.md"), "utf8");
+    assert.match(note, /status: ativo/);
+    assert.doesNotMatch(note, /outcome|resumeOn/);
+    assert.match(note, /Corpo\./);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

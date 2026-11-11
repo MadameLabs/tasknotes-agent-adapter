@@ -1001,3 +1001,115 @@ test("block and unblock edit the dependency list on a real vault", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("promote aceita como responsavel qualquer pessoa da colecao e recusa quem nao tem nota", async () => {
+  const { makeVault } = await import("./vault.mjs");
+  const { dir, vault } = await makeVault({
+    "11-pessoas/Lucilene.md": { type: "pessoa", name: "Lucilene" },
+    "01-planejamento/Plano.md": { type: "plano", title: "Plano" },
+  });
+  const config = join(dir, "config.json");
+  try {
+    await writeFile(config, JSON.stringify({
+      workspace: "dev", vault: "BIBLIOTECA", vaultPath: vault, defaultResponsavel: "arthur",
+      defaultBackend: "headless", headless: { mtnPath: mtn }, stateDir: join(dir, "state"),
+      vocabulary: { fields: { responsavel: "assignees", marca: "brand", projeto: "projects" } },
+    }));
+    const cmd = (...args) => run(process.execPath, [fileURLToPath(cli), ...args, "--config", config])
+      .then(({ stdout }) => JSON.parse(stdout)).catch((error) => JSON.parse(error.stdout));
+    const refused = await cmd("promote", "01-planejamento/Plano.md", "--responsavel", "Fulano", "--marca", "Madame_Labs", "--projeto", "p");
+    assert.equal(refused.error, "responsavel_desconhecido", JSON.stringify(refused));
+    assert.doesNotMatch(await readFile(join(vault, "01-planejamento", "Plano.md"), "utf8"), /- task/);
+    const promoted = await cmd("promote", "01-planejamento/Plano.md", "--responsavel", "Lucilene", "--marca", "Madame_Labs", "--projeto", "p");
+    assert.equal(promoted.ok, true, JSON.stringify(promoted));
+    assert.match(await readFile(join(vault, "01-planejamento", "Plano.md"), "utf8"), /assignees:\s+- '?\[\[Lucilene\]\]/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+async function projectCli() {
+  const { makeVault } = await import("./vault.mjs");
+  const { dir, vault } = await makeVault({
+    "11-pessoas/Arthur Cardoso.md": { type: "pessoa", name: "Arthur Cardoso" },
+    "11-pessoas/Lucilene.md": { type: "pessoa", name: "Lucilene" },
+    "02-marcas/a/Projetos/q.md": { type: "projeto", brand: "'[[A]]'", status: "ativo", owner: "'[[Arthur Cardoso]]'" },
+    "02-marcas/a/Projetos/r.md": { type: "projeto", brand: "'[[A]]'", status: "ativo" },
+    "06-tarefas/Tasks/T.md": { title: "T", status: "to-do", tags: ["task"], projects: ["'[[q]]'"] },
+  });
+  const config = join(dir, "config.json");
+  await writeFile(config, JSON.stringify({
+    workspace: "dev", vault: "BIBLIOTECA", vaultPath: vault, defaultResponsavel: "arthur",
+    defaultBackend: "headless", headless: { mtnPath: mtn }, stateDir: join(dir, "state"),
+    vocabulary: { fields: { responsavel: "assignees", marca: "brand", projeto: "projects" } },
+  }));
+  const cmd = (...args) => run(process.execPath, [fileURLToPath(cli), ...args, "--config", config])
+    .then(({ stdout }) => JSON.parse(stdout)).catch((error) => JSON.parse(error.stdout));
+  const note = (name) => readFile(join(vault, "02-marcas/a/Projetos", `${name}.md`), "utf8");
+  return { dir, cmd, note };
+}
+
+test("project-status grava o desfecho e recusa fechar sem ele sem tocar no arquivo", async () => {
+  const { dir, cmd, note } = await projectCli();
+  try {
+    const before = await note("q");
+    const refused = await cmd("project-status", "q", "--status", "concluido");
+    assert.equal(refused.error, "desfecho_obrigatorio", JSON.stringify(refused));
+    assert.equal(await note("q"), before);
+    const done = await cmd("project-status", "q", "--status", "concluido", "--desfecho", "entregue");
+    assert.equal(done.ok, true, JSON.stringify(done));
+    const today = new Date().toLocaleDateString("sv-SE");
+    assert.deepEqual(done.result, { path: "02-marcas/a/Projetos/q.md", name: "q", status: "concluido", outcome: "entregue", outcomeDate: today, resumeOn: null });
+    const written = await note("q");
+    assert.match(written, /status: concluido/);
+    assert.match(written, /outcome: entregue/);
+    assert.match(written, new RegExp(`outcomeDate: '?${today}`));
+    const reopened = await cmd("project-status", "q", "--status", "ativo");
+    assert.equal(reopened.ok, true, JSON.stringify(reopened));
+    assert.doesNotMatch(await note("q"), /outcome/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("project-assign grava owner de qualquer pessoa e recusa grupo", async () => {
+  const { dir, cmd, note } = await projectCli();
+  try {
+    const assigned = await cmd("project-assign", "r", "--responsavel", "Lucilene");
+    assert.equal(assigned.ok, true, JSON.stringify(assigned));
+    assert.deepEqual(assigned.result, { path: "02-marcas/a/Projetos/r.md", name: "r", owner: "[[Lucilene]]" });
+    assert.match(await note("r"), /owner: '?\[\[Lucilene\]\]/);
+    assert.equal((await cmd("project-assign", "r", "--responsavel", "labs")).error, "responsavel_grupo");
+    const listed = await cmd("projects", "--responsavel", "Lucilene");
+    assert.deepEqual(listed.result.items.map((item) => item.name), ["r"]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("projects resume as tarefas e project-review traz quem nao tem responsavel", async () => {
+  const { dir, cmd } = await projectCli();
+  try {
+    const listed = await cmd("projects");
+    const q = listed.result.items.find((item) => item.name === "q");
+    assert.equal(q.openTasks, 1);
+    assert.equal(q.owner, "[[Arthur Cardoso]]");
+    const review = await cmd("project-review", "--responsavel", "arthur", "--parado-ha", "30");
+    assert.equal(review.ok, true, JSON.stringify(review));
+    assert.deepEqual(review.result.queue.find((item) => item.name === "r").reason, "sem_responsavel");
+    assert.ok(Array.isArray(review.result.orphanLinks));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("--desfecho sem texto nao engole a opcao seguinte e nada e gravado", async () => {
+  const { dir, cmd, note } = await projectCli();
+  try {
+    const before = await note("q");
+    const refused = await cmd("project-status", "q", "--status", "pausado", "--desfecho", "--retomar-em", "2026-12-30");
+    assert.equal(refused.error, "desfecho_obrigatorio", JSON.stringify(refused));
+    assert.equal(await note("q"), before);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("projects --status com papel que nao e de projeto e recusado", async () => {
+  const { dir, cmd } = await projectCli();
+  try {
+    assert.equal((await cmd("projects", "--status", "pausa")).error, "invalid_project_status");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

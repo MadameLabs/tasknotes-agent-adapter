@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { loadConfig, resolveResponsavel } from "./config.mjs";
+import { loadConfig } from "./config.mjs";
+import { resolvePessoa } from "./pessoas.mjs";
 import { parseHookPayload } from "./hooks.mjs";
 import { diagnoseState, getBinding, openState, recoverLease } from "./state.mjs";
 import { sessionEnd } from "./domain.mjs";
@@ -8,13 +9,19 @@ import { createTaskNotesApiBackend } from "./backends/tasknotes-api.mjs";
 import { createMtnBackend } from "./backends/mtn.mjs";
 import { statusValue } from "./vocabulary.mjs";
 import { lastActivity } from "./time-entries.mjs";
+import { PROJECT_STATUS_ROLES, projectTransition } from "./projects.mjs";
+import { filterQueueByOwner, reviewQueue, summarizeProjects } from "./project-summary.mjs";
 
 const [command] = process.argv.slice(2);
 const configIndex = process.argv.indexOf("--config");
 const output = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
+// Opcao sem valor (`--desfecho --retomar-em ...`) nao pode engolir a opcao
+// seguinte: o desfecho era gravado como "--retomar-em" no projeto.
 const option = (name, fallback = undefined) => {
   const index = process.argv.indexOf(name);
-  return index === -1 ? fallback : process.argv[index + 1];
+  if (index === -1) return fallback;
+  const value = process.argv[index + 1];
+  return value === undefined || value.startsWith("--") ? undefined : value;
 };
 const options = (name) => process.argv.flatMap((value, index) => value === name ? [process.argv[index + 1]] : []);
 const requestedBackend = option("--backend");
@@ -43,6 +50,21 @@ function backendFor(config, name) {
 // se o Obsidian esta aberto. O backend do vinculo continua na frente, porque e
 // dele a identidade do timer, mas o headless entra atras como plano B -- ele le
 // o mesmo arquivo do vault e verifica a mesma identidade.
+// Responsavel e qualquer nota de pessoa da colecao. Apelido (`arthur`, `labs`)
+// resolve sem ler o vault; nome de pessoa e conferido contra 11-pessoas pelo
+// headless, que le o mesmo arquivo com ou sem Obsidian.
+async function resolverResponsavel(config, value, opcoes) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  // Apelido e nome de marca antigo se resolvem (ou se recusam) sem tocar no
+  // vault; so nome de pessoa precisa da lista.
+  try {
+    return resolvePessoa(value, [], opcoes);
+  } catch (error) {
+    if (!String(error?.message).startsWith("responsavel_desconhecido")) throw error;
+  }
+  return resolvePessoa(value, await backendFor(config, "headless").listPessoas(), opcoes);
+}
+
 function backendCandidates(config, primary) {
   // Sem bloco desktop na config, encerrar vai direto ao headless em vez de
   // falhar em missing_desktop.
@@ -128,7 +150,7 @@ if (command === "gate-planos") {
   }
   if (config) try {
     const backend = requestedBackend ?? config.defaultBackend ?? "desktop";
-    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "suggest-end", "block", "unblock"].includes(command)) {
+    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "suggest-end", "block", "unblock", "project-status", "project-assign", "projects", "project-review"].includes(command)) {
       output({ ok: false, error: "unknown_command", message: "unsupported command" });
       process.exitCode = 2;
     } else if (command === "hook-start" || command === "hook-end") {
@@ -161,7 +183,7 @@ if (command === "gate-planos") {
       output({ ok: true, tasks });
     } else if (command === "create") {
       const title = process.argv[3];
-      const responsavel = resolveResponsavel(option("--responsavel", config.defaultResponsavel));
+      const responsavel = await resolverResponsavel(config, option("--responsavel", config.defaultResponsavel));
       const marca = option("--marca");
       const projeto = option("--projeto");
       if (!title || !responsavel || !marca || !projeto) throw new Error("missing_create_metadata");
@@ -175,7 +197,7 @@ if (command === "gate-planos") {
       output({ ok: true, task });
     } else if (command === "promote") {
       const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
-      const responsavel = resolveResponsavel(option("--responsavel", config.defaultResponsavel));
+      const responsavel = await resolverResponsavel(config, option("--responsavel", config.defaultResponsavel));
       const marca = option("--marca");
       const projeto = option("--projeto");
       if (!taskPath || !responsavel || !marca || !projeto) throw new Error("missing_promotion_metadata");
@@ -293,6 +315,49 @@ if (command === "gate-planos") {
       if (blockers.includes(taskPath)) throw new Error("task_cannot_block_itself");
       const blockedBy = await backendFor(config, "headless").editBlockedBy(taskPath, blockers, command === "block" ? "add" : "remove");
       output({ ok: true, result: { taskPath, blockedBy } });
+    } else if (command === "project-status" || command === "project-assign") {
+      // Status e responsavel de projeto so mudam por aqui (design
+      // ciclo-de-vida-de-projetos). Sempre headless: e escrita de frontmatter
+      // de nota que nao e tarefa, fora do alcance da API do plugin.
+      const ref = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
+      if (!ref) throw new Error("missing_project");
+      const api = backendFor(config, "headless");
+      const project = await api.findProject(ref);
+      if (command === "project-assign") {
+        const [pessoa] = await resolverResponsavel(config, option("--responsavel"), { permitirGrupo: false }) ?? [];
+        if (!pessoa) throw new Error("missing_responsavel");
+        const owner = wikilink(pessoa);
+        await api.updateProject(project.path, { owner });
+        output({ ok: true, result: { path: project.path, name: project.name, owner } });
+      } else {
+        const fields = projectTransition({
+          role: option("--status"),
+          desfecho: option("--desfecho"),
+          retomarEm: option("--retomar-em"),
+          owner: project.frontmatter.owner,
+          today: new Date().toLocaleDateString("sv-SE"),
+          vocabulary: config.vocabulary,
+        });
+        await api.updateProject(project.path, fields);
+        output({ ok: true, result: { path: project.path, name: project.name, ...fields } });
+      }
+    } else if (command === "projects" || command === "project-review") {
+      const api = backendFor(config, "headless");
+      const responsavel = option("--responsavel");
+      const owner = responsavel ? wikilink((await resolverResponsavel(config, responsavel, { permitirGrupo: false }))[0]) : null;
+      const { items, orphanLinks } = summarizeProjects(await api.listProjects(), await api.listAllTasks(), { vocabulary: config.vocabulary });
+      if (command === "projects") {
+        const status = option("--status");
+        if (status && !PROJECT_STATUS_ROLES.includes(status)) throw new Error(`invalid_project_status:${status}`);
+        const statuses = status ? [status] : ["ativo", "pausado", "aprovacao"];
+        output({ ok: true, result: { items: items.filter((item) => statuses.includes(item.status) && (!owner || item.owner === owner)) } });
+      } else {
+        const paradoHa = Number(option("--parado-ha", "30"));
+        if (!Number.isInteger(paradoHa) || paradoHa < 0) throw new Error("invalid_parado_ha");
+        // Sem responsavel fica na fila de todo mundo: e a triagem que atribui.
+        const queue = reviewQueue(items, { today: new Date().toLocaleDateString("sv-SE"), paradoHa });
+        output({ ok: true, result: { queue: owner ? filterQueueByOwner(queue, owner) : queue, orphanLinks } });
+      }
     } else if (command === "diagnose") {
       const result = await diagnoseState(await openState(config.stateDir));
       // `--timers` le o vault e mostra ha quanto tempo cada cronometro esta
