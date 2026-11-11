@@ -144,3 +144,13 @@ test("vocabulary rejects unknown roles and two roles sharing one value", async (
     });
   }
 });
+
+test("projectStatuses tem padrao em portugues e recusa papel desconhecido", async () => {
+  await withConfig(validConfig, async (path) => {
+    const { vocabulary } = await loadConfig(path);
+    assert.equal(vocabulary.projectStatuses.pausado, "pausado");
+  });
+  await withConfig({ ...validConfig, vocabulary: { projectStatuses: { x: "y" } } }, async (path) => {
+    await assert.rejects(loadConfig(path), /invalid_vocabulary:projectStatuses\.x/);
+  });
+});

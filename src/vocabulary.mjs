@@ -5,10 +5,14 @@
 // config vale o portugues, que era o unico vocabulario ate entao.
 export const STATUS_ROLES = ["backlog", "to-do", "em-andamento", "aprovacao", "pausa", "concluido", "cancelado"];
 const FIELD_ROLES = { responsavel: "Responsavel", marca: "Marca", projeto: "Projeto" };
+// Projeto tem ciclo proprio (design ciclo-de-vida-de-projetos, 2026-11-11):
+// os papeis nao sao os da tarefa, e a BIBLIOTECA grava cada um pelo nome.
+export const PROJECT_STATUS_ROLES = ["ativo", "pausado", "aprovacao", "concluido", "cancelado"];
 
 export const DEFAULT_VOCABULARY = {
   statuses: Object.fromEntries(STATUS_ROLES.map((role) => [role, role])),
   fields: { ...FIELD_ROLES },
+  projectStatuses: Object.fromEntries(PROJECT_STATUS_ROLES.map((role) => [role, role])),
 };
 
 function merge(defaults, override, label) {
@@ -28,11 +32,12 @@ function merge(defaults, override, label) {
 }
 
 export function resolveVocabulary(raw) {
-  if (raw === undefined) return { statuses: { ...DEFAULT_VOCABULARY.statuses }, fields: { ...DEFAULT_VOCABULARY.fields } };
+  if (raw === undefined) return { statuses: { ...DEFAULT_VOCABULARY.statuses }, fields: { ...DEFAULT_VOCABULARY.fields }, projectStatuses: { ...DEFAULT_VOCABULARY.projectStatuses } };
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("invalid_vocabulary");
   return {
     statuses: merge(DEFAULT_VOCABULARY.statuses, raw.statuses, "statuses"),
     fields: merge(DEFAULT_VOCABULARY.fields, raw.fields, "fields"),
+    projectStatuses: merge(DEFAULT_VOCABULARY.projectStatuses, raw.projectStatuses, "projectStatuses"),
   };
 }
 
