@@ -96,7 +96,37 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
     }, vaultPath);
   }
 
+  // Projeto e nota `type: projeto` em 02-marcas/<marca>/Projetos/ (convencao
+  // da base). Os campos sao lidos crus: o mapeamento do mtn e de tarefa.
+  const PROJECT_PATH = /^02-marcas\/[^/]+\/Projetos\/[^/]+\.md$/;
+  const listProjects = async () => (await queryType("projeto"))
+    .filter((note) => PROJECT_PATH.test(note.path))
+    .map((note) => ({ path: note.path, name: basename(note.path, ".md"), frontmatter: note.frontmatter ?? {} }));
+
+  async function findProject(ref) {
+    const raw = String(ref ?? "").trim().replace(/^\[\[|\]\]$/g, "").split("|")[0];
+    const projects = await listProjects();
+    const byPath = projects.find((item) => item.path === raw);
+    if (byPath) return byPath;
+    const name = basename(raw, ".md");
+    const matches = projects.filter((item) => item.name === name);
+    if (matches.length > 1) throw new Error(`project_ambiguous:${matches.map((item) => item.path).sort().join(",")}`);
+    if (!matches.length) throw new Error(`project_not_found:${raw}`);
+    return matches[0];
+  }
+
+  async function updateProject(path, fields) {
+    const { withCollection } = await loadLibrary();
+    return withCollection(async (collection) => {
+      const written = await collection.update({ path, fields });
+      if (written.error) throw new Error(`mtn_failed:${written.error.message}`);
+    }, vaultPath);
+  }
+
   return {
+    listProjects,
+    findProject,
+    updateProject,
     listPessoas: async () => (await queryType("pessoa")).map((note) => basename(note.path, ".md")).sort(),
     listOpen: async () => (await listTasks()).filter((task) => !task.archived && !closed.has(task.status)),
     getTask: findTask,
