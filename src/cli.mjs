@@ -9,7 +9,7 @@ import { createTaskNotesApiBackend } from "./backends/tasknotes-api.mjs";
 import { createMtnBackend } from "./backends/mtn.mjs";
 import { statusValue } from "./vocabulary.mjs";
 import { lastActivity } from "./time-entries.mjs";
-import { PROJECT_STATUS_ROLES, projectTransition } from "./projects.mjs";
+import { PROJECT_STATUS_ROLES, milestoneFields, projectTransition } from "./projects.mjs";
 import { filterQueueByOwner, reviewQueue, summarizeProjects } from "./project-summary.mjs";
 
 const [command] = process.argv.slice(2);
@@ -150,7 +150,7 @@ if (command === "gate-planos") {
   }
   if (config) try {
     const backend = requestedBackend ?? config.defaultBackend ?? "desktop";
-    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "suggest-end", "block", "unblock", "project-status", "project-assign", "projects", "project-review"].includes(command)) {
+    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "suggest-end", "block", "unblock", "project-status", "project-assign", "project-milestone", "projects", "project-review"].includes(command)) {
       output({ ok: false, error: "unknown_command", message: "unsupported command" });
       process.exitCode = 2;
     } else if (command === "hook-start" || command === "hook-end") {
@@ -315,6 +315,14 @@ if (command === "gate-planos") {
       if (blockers.includes(taskPath)) throw new Error("task_cannot_block_itself");
       const blockedBy = await backendFor(config, "headless").editBlockedBy(taskPath, blockers, command === "block" ? "add" : "remove");
       output({ ok: true, result: { taskPath, blockedBy } });
+    } else if (command === "project-milestone") {
+      const ref = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
+      if (!ref) throw new Error("missing_project");
+      const api = backendFor(config, "headless");
+      const project = await api.findProject(ref);
+      const fields = milestoneFields({ marco: option("--marco"), data: option("--data"), limpar: process.argv.includes("--limpar") });
+      await api.updateProject(project.path, fields);
+      output({ ok: true, result: { path: project.path, name: project.name, ...fields } });
     } else if (command === "project-status" || command === "project-assign") {
       // Status e responsavel de projeto so mudam por aqui (design
       // ciclo-de-vida-de-projetos). Sempre headless: e escrita de frontmatter

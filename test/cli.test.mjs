@@ -1113,3 +1113,16 @@ test("projects --status com papel que nao e de projeto e recusado", async () => 
     assert.equal((await cmd("projects", "--status", "pausa")).error, "invalid_project_status");
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test("project-milestone grava o proximo marco e projects mostra", async () => {
+  const { dir, cmd, note } = await projectCli();
+  try {
+    const set = await cmd("project-milestone", "q", "--marco", "lançar", "--data", "2026-12-01");
+    assert.equal(set.ok, true, JSON.stringify(set));
+    assert.deepEqual(set.result, { path: "02-marcas/a/Projetos/q.md", name: "q", nextMilestone: "lançar", nextMilestoneDate: "2026-12-01" });
+    assert.match(await note("q"), /nextMilestone: lançar/);
+    const q = (await cmd("projects")).result.items.find((entry) => entry.name === "q");
+    assert.equal(q.nextMilestoneDate, "2026-12-01");
+    assert.equal((await cmd("project-milestone", "q", "--marco", "x", "--data", "ontem")).error, "data_invalida");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

@@ -37,3 +37,13 @@ export function projectTransition({ role, desfecho, retomarEm, owner, today, voc
   }
   return { status, outcome, outcomeDate: today, resumeOn };
 }
+
+// Proximo marco: texto de uma linha e data opcional, que pode estar no passado
+// (marco atrasado). Nao exige responsavel: e anotacao de planejamento.
+export function milestoneFields({ marco, data, limpar = false }) {
+  if (limpar) return { nextMilestone: null, nextMilestoneDate: null };
+  const nextMilestone = typeof marco === "string" ? marco.trim() : "";
+  if (!nextMilestone) throw new Error("marco_obrigatorio");
+  if (data !== undefined && !dataValida(data)) throw new Error("data_invalida");
+  return { nextMilestone, nextMilestoneDate: data ?? null };
+}

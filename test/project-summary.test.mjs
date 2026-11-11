@@ -50,8 +50,8 @@ test("fila: retomada vencida primeiro, depois sem responsavel, status desconheci
     project("recente"),
     project("estranho", { status: "em andamento" }),
     project("orfao", { owner: "Arthur" }),
-    project("retomar", { status: "pausado", resumeOn: "2026-11-11" }),
-    project("pausa-futura", { status: "pausado", resumeOn: "2026-12-01" }),
+    project("retomar", { status: "pausado", outcome: "x", resumeOn: "2026-11-11" }),
+    project("pausa-futura", { status: "pausado", outcome: "x", resumeOn: "2026-12-01" }),
   ], [
     task({ projects: ["[[parado]]"], timeEntries: [{ startTime: "2026-10-01T12:00:00Z" }] }),
     task({ projects: ["[[recente]]"], timeEntries: [{ startTime: "2026-10-20T12:00:00Z" }] }),
@@ -72,16 +72,32 @@ test("projeto fechado nao entra na fila, nem sem responsavel", () => {
 });
 
 test("pausado sem data de retomada entra na fila como pausa_sem_retomada", () => {
-  const items = summarize([project("leg", { status: "pausado" })], []).items;
+  const items = summarize([project("leg", { status: "pausado", outcome: "x" })], []).items;
   assert.deepEqual(reviewQueue(items, { today: "2026-11-11" }).map((entry) => entry.reason), ["pausa_sem_retomada"]);
 });
 
 test("filtro por pessoa mantem todo projeto sem responsavel, qualquer que seja o motivo", () => {
   const items = summarize([
-    project("venceu", { status: "pausado", resumeOn: "2026-11-01", owner: undefined }),
+    project("venceu", { status: "pausado", outcome: "x", resumeOn: "2026-11-01", owner: undefined }),
     project("da-mayara", { owner: "[[Mayara Almeida]]" }),
     project("meu"),
   ], []).items;
   const queue = filterQueueByOwner(reviewQueue(items, { today: "2026-11-11" }), "[[Arthur Cardoso]]");
   assert.deepEqual(queue.map((entry) => entry.name).sort(), ["meu", "venceu"]);
+});
+
+test("fechado ou pausado sem desfecho vem antes de tudo na fila, mesmo fechado", () => {
+  const items = summarize([
+    project("venceu", { status: "pausado", outcome: "x", resumeOn: "2026-11-01" }),
+    project("arrastado", { status: "concluido" }),
+    project("certo", { status: "concluido", outcome: "entregue" }),
+  ], []).items;
+  assert.deepEqual(reviewQueue(items, { today: "2026-11-11" }).map((entry) => [entry.name, entry.reason]),
+    [["arrastado", "desfecho_ausente"], ["venceu", "retomada_vencida"]]);
+});
+
+test("o resumo traz o proximo marco", () => {
+  const summary = item([project("p", { nextMilestone: "lançar", nextMilestoneDate: "2026-12-01" })], []);
+  assert.equal(summary.nextMilestone, "lançar");
+  assert.equal(summary.nextMilestoneDate, "2026-12-01");
 });

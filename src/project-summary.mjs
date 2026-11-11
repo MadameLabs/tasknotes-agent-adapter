@@ -45,6 +45,8 @@ export function summarizeProjects(projects, tasks, { vocabulary }) {
       outcome: fm.outcome ?? null,
       outcomeDate: day(fm.outcomeDate),
       resumeOn: day(fm.resumeOn),
+      nextMilestone: fm.nextMilestone ?? null,
+      nextMilestoneDate: day(fm.nextMilestoneDate),
       openTasks: open.length,
       totalTasks: linked.length,
       lastActivity: linked.map(lastActivityOf).filter(Boolean).sort().at(-1) ?? null,
@@ -55,7 +57,7 @@ export function summarizeProjects(projects, tasks, { vocabulary }) {
   return { items, orphanLinks };
 }
 
-const REASONS = ["retomada_vencida", "pausa_sem_retomada", "sem_responsavel", "status_desconhecido", "parado", "aguardando_aprovacao"];
+const REASONS = ["desfecho_ausente", "retomada_vencida", "pausa_sem_retomada", "sem_responsavel", "status_desconhecido", "parado", "aguardando_aprovacao"];
 
 function minusDays(today, days) {
   const date = new Date(`${today}T00:00:00Z`);
@@ -63,7 +65,12 @@ function minusDays(today, days) {
   return date.toISOString().slice(0, 10);
 }
 
+// Status fora de `ativo` sem desfecho: arrastado no kanban ou editado a mao.
+// Vale ate para projeto fechado -- e o unico motivo que traz fechado a fila.
+const PEDEM_DESFECHO = new Set(["pausado", "aprovacao", "concluido", "cancelado"]);
+
 function reasonFor(item, { today, limite }) {
+  if (PEDEM_DESFECHO.has(item.status) && !item.outcome) return "desfecho_ausente";
   if (item.status === "concluido" || item.status === "cancelado") return null;
   if (item.status === "pausado" && item.resumeOn && item.resumeOn <= today) return "retomada_vencida";
   // Pausa legada, de antes do ciclo: sem data, ninguem voltaria a olhar.

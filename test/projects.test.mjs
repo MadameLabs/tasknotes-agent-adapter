@@ -59,3 +59,12 @@ test("owner legado em texto puro ou lista nao conta como responsavel", () => {
   assert.throws(() => go({ role: "concluido", desfecho: "x", owner: "Arthur" }), /^Error: owner_obrigatorio$/);
   assert.throws(() => go({ role: "cancelado", desfecho: "x", owner: ["[[Arthur Cardoso]]"] }), /^Error: owner_obrigatorio$/);
 });
+
+test("proximo marco: texto obrigatorio, data opcional e valida, limpar apaga", async () => {
+  const { milestoneFields } = await import("../src/projects.mjs");
+  assert.deepEqual(milestoneFields({ marco: " lançar ", data: "2026-12-01" }), { nextMilestone: "lançar", nextMilestoneDate: "2026-12-01" });
+  assert.deepEqual(milestoneFields({ marco: "lançar" }), { nextMilestone: "lançar", nextMilestoneDate: null });
+  assert.throws(() => milestoneFields({}), /^Error: marco_obrigatorio$/);
+  assert.throws(() => milestoneFields({ marco: "x", data: "1/12" }), /^Error: data_invalida$/);
+  assert.deepEqual(milestoneFields({ limpar: true }), { nextMilestone: null, nextMilestoneDate: null });
+});
