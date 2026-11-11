@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { projectName, reviewQueue, summarizeProjects } from "../src/project-summary.mjs";
+import { filterQueueByOwner, projectName, reviewQueue, summarizeProjects } from "../src/project-summary.mjs";
 import { resolveVocabulary } from "../src/vocabulary.mjs";
 
 const vocabulary = resolveVocabulary(undefined);
@@ -69,4 +69,19 @@ test("fila: retomada vencida primeiro, depois sem responsavel, status desconheci
 test("projeto fechado nao entra na fila, nem sem responsavel", () => {
   const items = summarize([project("fim", { status: "concluido", outcome: "x", owner: undefined })], []).items;
   assert.deepEqual(reviewQueue(items, { today: "2026-11-11" }), []);
+});
+
+test("pausado sem data de retomada entra na fila como pausa_sem_retomada", () => {
+  const items = summarize([project("leg", { status: "pausado" })], []).items;
+  assert.deepEqual(reviewQueue(items, { today: "2026-11-11" }).map((entry) => entry.reason), ["pausa_sem_retomada"]);
+});
+
+test("filtro por pessoa mantem todo projeto sem responsavel, qualquer que seja o motivo", () => {
+  const items = summarize([
+    project("venceu", { status: "pausado", resumeOn: "2026-11-01", owner: undefined }),
+    project("da-mayara", { owner: "[[Mayara Almeida]]" }),
+    project("meu"),
+  ], []).items;
+  const queue = filterQueueByOwner(reviewQueue(items, { today: "2026-11-11" }), "[[Arthur Cardoso]]");
+  assert.deepEqual(queue.map((entry) => entry.name).sort(), ["meu", "venceu"]);
 });

@@ -54,3 +54,8 @@ test("o valor gravado vem do vocabulario do vault", () => {
   const custom = resolveVocabulary({ projectStatuses: { concluido: "done" } });
   assert.equal(projectTransition({ role: "concluido", desfecho: "x", owner, today, vocabulary: custom }).status, "done");
 });
+
+test("owner legado em texto puro ou lista nao conta como responsavel", () => {
+  assert.throws(() => go({ role: "concluido", desfecho: "x", owner: "Arthur" }), /^Error: owner_obrigatorio$/);
+  assert.throws(() => go({ role: "cancelado", desfecho: "x", owner: ["[[Arthur Cardoso]]"] }), /^Error: owner_obrigatorio$/);
+});

@@ -1096,3 +1096,20 @@ test("projects resume as tarefas e project-review traz quem nao tem responsavel"
     assert.ok(Array.isArray(review.result.orphanLinks));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test("--desfecho sem texto nao engole a opcao seguinte e nada e gravado", async () => {
+  const { dir, cmd, note } = await projectCli();
+  try {
+    const before = await note("q");
+    const refused = await cmd("project-status", "q", "--status", "pausado", "--desfecho", "--retomar-em", "2026-12-30");
+    assert.equal(refused.error, "desfecho_obrigatorio", JSON.stringify(refused));
+    assert.equal(await note("q"), before);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test("projects --status com papel que nao e de projeto e recusado", async () => {
+  const { dir, cmd } = await projectCli();
+  try {
+    assert.equal((await cmd("projects", "--status", "pausa")).error, "invalid_project_status");
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

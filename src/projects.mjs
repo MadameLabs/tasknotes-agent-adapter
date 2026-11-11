@@ -14,9 +14,15 @@ function dataValida(value) {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+// Responsavel valido e um wikilink so, como string: `owner: Arthur` (texto) e
+// `owner: ["[[A]]"]` (lista) sao legado e contam como sem responsavel, aqui e
+// no resumo -- uma regra so para o que grava e para o que mostra.
+const WIKILINK = /^\[\[[^\]]+\]\]$/;
+export const normalizeOwner = (value) => (typeof value === "string" && WIKILINK.test(value.trim()) ? value.trim() : null);
+
 export function projectTransition({ role, desfecho, retomarEm, owner, today, vocabulary }) {
   if (!PROJECT_STATUS_ROLES.includes(role)) throw new Error(`invalid_project_status:${role}`);
-  if (!owner) throw new Error("owner_obrigatorio");
+  if (!normalizeOwner(owner)) throw new Error("owner_obrigatorio");
   const status = vocabulary.projectStatuses[role];
   if (retomarEm !== undefined && role !== "pausado") throw new Error("retomada_so_em_pausa");
   if (role === "ativo") return { status, outcome: null, outcomeDate: null, resumeOn: null };

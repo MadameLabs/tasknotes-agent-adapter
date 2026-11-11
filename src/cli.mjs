@@ -9,15 +9,19 @@ import { createTaskNotesApiBackend } from "./backends/tasknotes-api.mjs";
 import { createMtnBackend } from "./backends/mtn.mjs";
 import { statusValue } from "./vocabulary.mjs";
 import { lastActivity } from "./time-entries.mjs";
-import { projectTransition } from "./projects.mjs";
-import { reviewQueue, summarizeProjects } from "./project-summary.mjs";
+import { PROJECT_STATUS_ROLES, projectTransition } from "./projects.mjs";
+import { filterQueueByOwner, reviewQueue, summarizeProjects } from "./project-summary.mjs";
 
 const [command] = process.argv.slice(2);
 const configIndex = process.argv.indexOf("--config");
 const output = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
+// Opcao sem valor (`--desfecho --retomar-em ...`) nao pode engolir a opcao
+// seguinte: o desfecho era gravado como "--retomar-em" no projeto.
 const option = (name, fallback = undefined) => {
   const index = process.argv.indexOf(name);
-  return index === -1 ? fallback : process.argv[index + 1];
+  if (index === -1) return fallback;
+  const value = process.argv[index + 1];
+  return value === undefined || value.startsWith("--") ? undefined : value;
 };
 const options = (name) => process.argv.flatMap((value, index) => value === name ? [process.argv[index + 1]] : []);
 const requestedBackend = option("--backend");
@@ -344,15 +348,15 @@ if (command === "gate-planos") {
       const { items, orphanLinks } = summarizeProjects(await api.listProjects(), await api.listAllTasks(), { vocabulary: config.vocabulary });
       if (command === "projects") {
         const status = option("--status");
+        if (status && !PROJECT_STATUS_ROLES.includes(status)) throw new Error(`invalid_project_status:${status}`);
         const statuses = status ? [status] : ["ativo", "pausado", "aprovacao"];
         output({ ok: true, result: { items: items.filter((item) => statuses.includes(item.status) && (!owner || item.owner === owner)) } });
       } else {
         const paradoHa = Number(option("--parado-ha", "30"));
         if (!Number.isInteger(paradoHa) || paradoHa < 0) throw new Error("invalid_parado_ha");
         // Sem responsavel fica na fila de todo mundo: e a triagem que atribui.
-        const queue = reviewQueue(items, { today: new Date().toLocaleDateString("sv-SE"), paradoHa })
-          .filter((item) => !owner || item.owner === owner || item.reason === "sem_responsavel");
-        output({ ok: true, result: { queue, orphanLinks } });
+        const queue = reviewQueue(items, { today: new Date().toLocaleDateString("sv-SE"), paradoHa });
+        output({ ok: true, result: { queue: owner ? filterQueueByOwner(queue, owner) : queue, orphanLinks } });
       }
     } else if (command === "diagnose") {
       const result = await diagnoseState(await openState(config.stateDir));

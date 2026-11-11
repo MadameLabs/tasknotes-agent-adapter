@@ -2,7 +2,8 @@
 // o backend entrega projetos e tarefas, e o CLI decide o que mostrar. A
 // contagem de tarefas e informacao; nada aqui muda status de projeto.
 
-const WIKILINK = /^\[\[[^\]]+\]\]$/;
+import { normalizeOwner } from "./projects.mjs";
+
 const day = (value) => (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : null);
 
 export function projectName(link) {
@@ -40,7 +41,7 @@ export function summarizeProjects(projects, tasks, { vocabulary }) {
       name,
       brand: fm.brand ?? null,
       status: roleByValue.get(fm.status) ?? null,
-      owner: typeof fm.owner === "string" && WIKILINK.test(fm.owner) ? fm.owner : null,
+      owner: normalizeOwner(fm.owner),
       outcome: fm.outcome ?? null,
       outcomeDate: day(fm.outcomeDate),
       resumeOn: day(fm.resumeOn),
@@ -54,7 +55,7 @@ export function summarizeProjects(projects, tasks, { vocabulary }) {
   return { items, orphanLinks };
 }
 
-const REASONS = ["retomada_vencida", "sem_responsavel", "status_desconhecido", "parado", "aguardando_aprovacao"];
+const REASONS = ["retomada_vencida", "pausa_sem_retomada", "sem_responsavel", "status_desconhecido", "parado", "aguardando_aprovacao"];
 
 function minusDays(today, days) {
   const date = new Date(`${today}T00:00:00Z`);
@@ -65,6 +66,8 @@ function minusDays(today, days) {
 function reasonFor(item, { today, limite }) {
   if (item.status === "concluido" || item.status === "cancelado") return null;
   if (item.status === "pausado" && item.resumeOn && item.resumeOn <= today) return "retomada_vencida";
+  // Pausa legada, de antes do ciclo: sem data, ninguem voltaria a olhar.
+  if (item.status === "pausado" && !item.resumeOn) return "pausa_sem_retomada";
   if (!item.owner) return "sem_responsavel";
   if (!item.status) return "status_desconhecido";
   if (item.status === "ativo" && (!item.lastActivity || item.lastActivity < limite)) return "parado";
@@ -79,3 +82,7 @@ export function reviewQueue(items, { today, paradoHa = 30 }) {
     .filter((item) => item.reason)
     .sort((a, b) => REASONS.indexOf(a.reason) - REASONS.indexOf(b.reason) || a.name.localeCompare(b.name));
 }
+
+// Fila de uma pessoa: os projetos dela mais todo projeto sem responsavel, que
+// e a triagem que atribui -- qualquer que seja o motivo de estar na fila.
+export const filterQueueByOwner = (queue, owner) => queue.filter((item) => !item.owner || item.owner === owner);
