@@ -124,6 +124,7 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
   }
 
   return {
+    listAllTasks,
     listProjects,
     findProject,
     updateProject,

@@ -9,6 +9,8 @@ import { createTaskNotesApiBackend } from "./backends/tasknotes-api.mjs";
 import { createMtnBackend } from "./backends/mtn.mjs";
 import { statusValue } from "./vocabulary.mjs";
 import { lastActivity } from "./time-entries.mjs";
+import { projectTransition } from "./projects.mjs";
+import { reviewQueue, summarizeProjects } from "./project-summary.mjs";
 
 const [command] = process.argv.slice(2);
 const configIndex = process.argv.indexOf("--config");
@@ -144,7 +146,7 @@ if (command === "gate-planos") {
   }
   if (config) try {
     const backend = requestedBackend ?? config.defaultBackend ?? "desktop";
-    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "suggest-end", "block", "unblock"].includes(command)) {
+    if (!["hook-start", "hook-end", "open", "create", "promote", "link-project", "set-status", "start", "stop", "diagnose", "recover", "recover-orphan", "fix-time", "suggest-end", "block", "unblock", "project-status", "project-assign", "projects", "project-review"].includes(command)) {
       output({ ok: false, error: "unknown_command", message: "unsupported command" });
       process.exitCode = 2;
     } else if (command === "hook-start" || command === "hook-end") {
@@ -309,6 +311,49 @@ if (command === "gate-planos") {
       if (blockers.includes(taskPath)) throw new Error("task_cannot_block_itself");
       const blockedBy = await backendFor(config, "headless").editBlockedBy(taskPath, blockers, command === "block" ? "add" : "remove");
       output({ ok: true, result: { taskPath, blockedBy } });
+    } else if (command === "project-status" || command === "project-assign") {
+      // Status e responsavel de projeto so mudam por aqui (design
+      // ciclo-de-vida-de-projetos). Sempre headless: e escrita de frontmatter
+      // de nota que nao e tarefa, fora do alcance da API do plugin.
+      const ref = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
+      if (!ref) throw new Error("missing_project");
+      const api = backendFor(config, "headless");
+      const project = await api.findProject(ref);
+      if (command === "project-assign") {
+        const [pessoa] = await resolverResponsavel(config, option("--responsavel"), { permitirGrupo: false }) ?? [];
+        if (!pessoa) throw new Error("missing_responsavel");
+        const owner = wikilink(pessoa);
+        await api.updateProject(project.path, { owner });
+        output({ ok: true, result: { path: project.path, name: project.name, owner } });
+      } else {
+        const fields = projectTransition({
+          role: option("--status"),
+          desfecho: option("--desfecho"),
+          retomarEm: option("--retomar-em"),
+          owner: project.frontmatter.owner,
+          today: new Date().toLocaleDateString("sv-SE"),
+          vocabulary: config.vocabulary,
+        });
+        await api.updateProject(project.path, fields);
+        output({ ok: true, result: { path: project.path, name: project.name, ...fields } });
+      }
+    } else if (command === "projects" || command === "project-review") {
+      const api = backendFor(config, "headless");
+      const responsavel = option("--responsavel");
+      const owner = responsavel ? wikilink((await resolverResponsavel(config, responsavel, { permitirGrupo: false }))[0]) : null;
+      const { items, orphanLinks } = summarizeProjects(await api.listProjects(), await api.listAllTasks(), { vocabulary: config.vocabulary });
+      if (command === "projects") {
+        const status = option("--status");
+        const statuses = status ? [status] : ["ativo", "pausado", "aprovacao"];
+        output({ ok: true, result: { items: items.filter((item) => statuses.includes(item.status) && (!owner || item.owner === owner)) } });
+      } else {
+        const paradoHa = Number(option("--parado-ha", "30"));
+        if (!Number.isInteger(paradoHa) || paradoHa < 0) throw new Error("invalid_parado_ha");
+        // Sem responsavel fica na fila de todo mundo: e a triagem que atribui.
+        const queue = reviewQueue(items, { today: new Date().toLocaleDateString("sv-SE"), paradoHa })
+          .filter((item) => !owner || item.owner === owner || item.reason === "sem_responsavel");
+        output({ ok: true, result: { queue, orphanLinks } });
+      }
     } else if (command === "diagnose") {
       const result = await diagnoseState(await openState(config.stateDir));
       // `--timers` le o vault e mostra ha quanto tempo cada cronometro esta
