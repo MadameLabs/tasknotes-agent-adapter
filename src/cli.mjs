@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { loadConfig, resolveResponsavel } from "./config.mjs";
+import { loadConfig } from "./config.mjs";
+import { resolvePessoa } from "./pessoas.mjs";
 import { parseHookPayload } from "./hooks.mjs";
 import { diagnoseState, getBinding, openState, recoverLease } from "./state.mjs";
 import { sessionEnd } from "./domain.mjs";
@@ -43,6 +44,21 @@ function backendFor(config, name) {
 // se o Obsidian esta aberto. O backend do vinculo continua na frente, porque e
 // dele a identidade do timer, mas o headless entra atras como plano B -- ele le
 // o mesmo arquivo do vault e verifica a mesma identidade.
+// Responsavel e qualquer nota de pessoa da colecao. Apelido (`arthur`, `labs`)
+// resolve sem ler o vault; nome de pessoa e conferido contra 11-pessoas pelo
+// headless, que le o mesmo arquivo com ou sem Obsidian.
+async function resolverResponsavel(config, value, opcoes) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  // Apelido e nome de marca antigo se resolvem (ou se recusam) sem tocar no
+  // vault; so nome de pessoa precisa da lista.
+  try {
+    return resolvePessoa(value, [], opcoes);
+  } catch (error) {
+    if (!String(error?.message).startsWith("responsavel_desconhecido")) throw error;
+  }
+  return resolvePessoa(value, await backendFor(config, "headless").listPessoas(), opcoes);
+}
+
 function backendCandidates(config, primary) {
   // Sem bloco desktop na config, encerrar vai direto ao headless em vez de
   // falhar em missing_desktop.
@@ -161,7 +177,7 @@ if (command === "gate-planos") {
       output({ ok: true, tasks });
     } else if (command === "create") {
       const title = process.argv[3];
-      const responsavel = resolveResponsavel(option("--responsavel", config.defaultResponsavel));
+      const responsavel = await resolverResponsavel(config, option("--responsavel", config.defaultResponsavel));
       const marca = option("--marca");
       const projeto = option("--projeto");
       if (!title || !responsavel || !marca || !projeto) throw new Error("missing_create_metadata");
@@ -175,7 +191,7 @@ if (command === "gate-planos") {
       output({ ok: true, task });
     } else if (command === "promote") {
       const taskPath = process.argv[3]?.startsWith("--") ? undefined : process.argv[3];
-      const responsavel = resolveResponsavel(option("--responsavel", config.defaultResponsavel));
+      const responsavel = await resolverResponsavel(config, option("--responsavel", config.defaultResponsavel));
       const marca = option("--marca");
       const projeto = option("--projeto");
       if (!taskPath || !responsavel || !marca || !projeto) throw new Error("missing_promotion_metadata");

@@ -7,7 +7,7 @@ import { join } from "node:path";
 // Apelido aceito na linha de comando -> pessoas em BIBLIOTECA/11-pessoas/, para
 // que `assignees` grave wikilinks que resolvem de verdade. Responsavel e pessoa,
 // nao marca (T8 do projeto base unica, 2026-11): `labs` sao os dois socios.
-const RESPONSAVEIS = new Map([
+export const RESPONSAVEIS = new Map([
   ["arthur", ["Arthur Cardoso"]],
   ["mayara", ["Mayara Almeida"]],
   ["labs", ["Arthur Cardoso", "Mayara Almeida"]],
@@ -17,7 +17,7 @@ const RESPONSAVEIS = new Map([
 // Nomes de marca que ja fizeram papel de responsavel. Config velho ou habito
 // gravaria a marca de novo; falhar as claras, dizendo o apelido certo, e o que
 // impede uma maquina atrasada de desfazer o corte sem ninguem perceber.
-const ANTIGOS = new Map([
+export const ANTIGOS = new Map([
   ["Arthur_Cardoso", "arthur"],
   ["Madame_Carmen", "mayara"],
   ["Madame_Labs", "labs"],

@@ -267,3 +267,15 @@ test("mtn promote writes one wikilink per person", async () => {
     ]);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test("listPessoas devolve o nome de toda nota type: pessoa da colecao", async () => {
+  const { makeVault } = await import("./vault.mjs");
+  const { dir, vault } = await makeVault({
+    "11-pessoas/Lucilene.md": { type: "pessoa", name: "Lucilene" },
+    "02-marcas/a/Projetos/p.md": { type: "projeto", status: "ativo" },
+  });
+  try {
+    const backend = createMtnBackend({ mtnPath: mtn, vaultPath: vault });
+    assert.deepEqual(await backend.listPessoas(), ["Lucilene"]);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

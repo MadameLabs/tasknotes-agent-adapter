@@ -1001,3 +1001,29 @@ test("block and unblock edit the dependency list on a real vault", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("promote aceita como responsavel qualquer pessoa da colecao e recusa quem nao tem nota", async () => {
+  const { makeVault } = await import("./vault.mjs");
+  const { dir, vault } = await makeVault({
+    "11-pessoas/Lucilene.md": { type: "pessoa", name: "Lucilene" },
+    "01-planejamento/Plano.md": { type: "plano", title: "Plano" },
+  });
+  const config = join(dir, "config.json");
+  try {
+    await writeFile(config, JSON.stringify({
+      workspace: "dev", vault: "BIBLIOTECA", vaultPath: vault, defaultResponsavel: "arthur",
+      defaultBackend: "headless", headless: { mtnPath: mtn }, stateDir: join(dir, "state"),
+      vocabulary: { fields: { responsavel: "assignees", marca: "brand", projeto: "projects" } },
+    }));
+    const cmd = (...args) => run(process.execPath, [fileURLToPath(cli), ...args, "--config", config])
+      .then(({ stdout }) => JSON.parse(stdout)).catch((error) => JSON.parse(error.stdout));
+    const refused = await cmd("promote", "01-planejamento/Plano.md", "--responsavel", "Fulano", "--marca", "Madame_Labs", "--projeto", "p");
+    assert.equal(refused.error, "responsavel_desconhecido", JSON.stringify(refused));
+    assert.doesNotMatch(await readFile(join(vault, "01-planejamento", "Plano.md"), "utf8"), /- task/);
+    const promoted = await cmd("promote", "01-planejamento/Plano.md", "--responsavel", "Lucilene", "--marca", "Madame_Labs", "--projeto", "p");
+    assert.equal(promoted.ok, true, JSON.stringify(promoted));
+    assert.match(await readFile(join(vault, "01-planejamento", "Plano.md"), "utf8"), /assignees:\s+- '?\[\[Lucilene\]\]/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

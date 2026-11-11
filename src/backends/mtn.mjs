@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_VOCABULARY, closedStatuses } from "../vocabulary.mjs";
 import { bundledMtnPath } from "../mtn-path.mjs";
@@ -85,7 +85,19 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
     });
   }
 
+  // Notas de um tipo da colecao (pessoa, projeto), lidas pela mesma biblioteca
+  // do mtn: o CLI dele so lista tarefa.
+  async function queryType(type) {
+    const { withCollection } = await loadLibrary();
+    return withCollection(async (collection) => {
+      const result = await collection.query({ where: { type: { eq: type } }, limit: 100000 });
+      if (result.error) throw new Error(`mtn_failed:${result.error.message}`);
+      return result.results ?? [];
+    }, vaultPath);
+  }
+
   return {
+    listPessoas: async () => (await queryType("pessoa")).map((note) => basename(note.path, ".md")).sort(),
     listOpen: async () => (await listTasks()).filter((task) => !task.archived && !closed.has(task.status)),
     getTask: findTask,
     getActiveTimers,
