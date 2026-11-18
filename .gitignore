@@ -1,3 +1,6 @@
 node_modules/
 config.agent.local.json
 *.tgz
+
+# graphify: grafo de código, regenerável sem custo (GRAPHIFY_BACKEND=none graphify extract . --code-only)
+graphify-out/
