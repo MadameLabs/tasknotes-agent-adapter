@@ -152,7 +152,7 @@ test("Codex SessionStart identifies its required hook event", async () => {
     assert.match(output.hookSpecificOutput.additionalContext, /gate TaskNotes/i);
     assert.match(output.hookSpecificOutput.additionalContext, /agente decide o status/i);
     assert.match(output.hookSpecificOutput.additionalContext, /ambiguidade/i);
-    assert.match(output.hookSpecificOutput.additionalContext, /aprovacao.*concluido.*cancelado.*pausa/i);
+    assert.match(output.hookSpecificOutput.additionalContext, /concluido.*pausa.*cancelado.*aprovacao o agente nunca usa/i);
   });
 });
 
@@ -170,7 +170,7 @@ test("SessionStart vinculado exige decisão contextual e status explícito", asy
     assert.match(context, /agente decide o status/i);
     assert.match(context, /ambiguidade/i);
     assert.match(context, /--status STATUS/);
-    assert.match(context, /aprovacao.*concluido.*cancelado.*pausa/i);
+    assert.match(context, /concluido.*pausa.*cancelado.*aprovacao o agente nunca usa/i);
   });
 });
 
