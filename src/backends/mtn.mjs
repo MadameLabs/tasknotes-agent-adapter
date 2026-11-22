@@ -27,7 +27,8 @@ export function createMtnBackend({ mtnPath, vaultPath, mtnArgs = [], vocabulary 
   const prefix = isScript ? [mtnPath, ...mtnArgs] : mtnArgs;
   async function invoke(args) {
     try {
-      const { stdout } = await run(command, [...prefix, ...args, "--path", vaultPath], { windowsHide: true });
+      // O padrao do execFile e 1 MB, e a lista completa da BIBLIOTECA ja passa disso.
+      const { stdout } = await run(command, [...prefix, ...args, "--path", vaultPath], { windowsHide: true, maxBuffer: 64 * 1024 * 1024 });
       return stdout;
     } catch (error) {
       // O mtn imprime a causa como "✗ unknown_field:Responsavel" e sai com 1.
