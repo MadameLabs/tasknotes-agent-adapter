@@ -45,6 +45,20 @@ test("listing asks for every task instead of the default first page", async () =
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+// O execFile corta a saida em 1 MB por padrao e trata o corte como falha. A
+// lista completa da BIBLIOTECA passou de 1 MB em 2026-11-21, e `start` e
+// `stop` morriam em "mtn_failed:[" -- o "[" era o comeco do JSON cortado.
+test("reads a task list larger than execFile's default 1 MB buffer", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-buffer-"));
+  const script = join(dir, "fake.mjs");
+  await writeFile(script, `const nota = 'x'.repeat(2000); console.log(JSON.stringify(Array.from({ length: 1000 }, (_, i) => ({ path: 't' + i + '.md', status: 'to-do', nota }))));`);
+  try {
+    const backend = createMtnBackend({ mtnPath: process.execPath, mtnArgs: [script], vaultPath: "C:/vault" });
+    const tarefas = await backend.listOpen();
+    assert.equal(tarefas.length, 1000);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test("promotes one exact note with the approved TaskNotes metadata", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mtn-adapter-promote-"));
   const output = join(dir, "args.json");
